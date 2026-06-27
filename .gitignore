@@ -2,3 +2,5 @@ node_modules/
 main.js
 bundle.js
 *.js.map
+tools/judge/shots/
+.env

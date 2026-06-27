@@ -7,8 +7,15 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import type Progress3DPlugin from "./main";
 import { TYPE_COLOR, GraphNode } from "./graph";
 import { PromptModal } from "./prompt-modal";
+import { GrpoScene } from "./grpo-scene";
 
 export const VIEW_TYPE = "progress3d-map";
+
+// ── small math helpers for the custom GRPO renderer ──────────────────────────
+const _lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+const _clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+const _easeIO = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+const _cMix = (a: string, b: string, t: number) => new THREE.Color(a).lerp(new THREE.Color(b), _clamp(t, 0, 1));
 
 export class ResearchMapView extends ItemView {
   plugin: Progress3DPlugin;
@@ -44,6 +51,11 @@ export class ResearchMapView extends ItemView {
   private dragMoved = false;
   private dragPlane = new THREE.Plane();
   private linkSource: string | null = null;
+  private grpo: GrpoScene | null = null;
+  // custom animated renderer for the `grpo` map (replaces the generic node-graph)
+  private grpo: any = null;
+  private grpoModeForced: number | null = null; // null = auto-toggle, 0 = GRPO, 1 = Dr.GRPO
+  private grpoModeBtn: HTMLButtonElement | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: Progress3DPlugin) {
     super(leaf);
@@ -86,6 +98,13 @@ export class ResearchMapView extends ItemView {
       if (!id) { new Notice("Click a node to select it first."); return; }
       await this.plugin.deleteNode(id);
       new Notice(`Deleted node "${id}".`);
+    };
+    // mode toggle — only shown for animated maps (e.g. grpo). Cycles Auto → GRPO → Dr.GRPO.
+    this.grpoModeBtn = bar.createEl("button", { text: "mode: Auto ⇄" });
+    this.grpoModeBtn.style.display = "none";
+    this.grpoModeBtn.onclick = () => {
+      this.grpoModeForced = this.grpoModeForced === null ? 0 : this.grpoModeForced === 0 ? 1 : null;
+      this.updateGrpoBtn();
     };
 
     const hint = this.host.createDiv({ cls: "p3d-hint" });
@@ -250,6 +269,10 @@ export class ResearchMapView extends ItemView {
 
   // ── build / rebuild from the graph ─────────────────────────────────────
   private buildScene() {
+    const isGrpo = this.plugin.settings.activeMap === "grpo";
+    if (this.grpoModeBtn) this.grpoModeBtn.style.display = isGrpo ? "" : "none";
+    if (isGrpo) { this.buildGrpo(); return; }
+
     const graph = this.plugin.graph;
     this.pickMeshes = [];
 
@@ -333,6 +356,7 @@ export class ResearchMapView extends ItemView {
     this.nodeMeshes = [];
     this.meshById.clear();
     this.selected = null;
+    this.grpo = null;
     this.pulses = null;
     this.path = [];
     this.pulseMeta = [];
@@ -367,7 +391,7 @@ export class ResearchMapView extends ItemView {
     this.downXY = [e.clientX, e.clientY];
     this.downButton = e.button;
     this.dragMoved = false;
-    if (e.button === 1) {
+    if (e.button === 1 && !this.grpo) { // node-dragging disabled on the animated grpo map
       // middle button → grab a node and move it (plane through it, facing camera)
       const hit = this.nodeAt(e);
       if (hit) {

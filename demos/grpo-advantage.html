@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GRPO · Advantage dynamics &amp; the length bias (with Dr. GRPO)</title>
+<style>
+  :root { color-scheme: dark; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { height:100%; overflow:hidden; background:#03040a;
+    font-family:-apple-system,"SF Pro Text",Inter,system-ui,sans-serif; }
+  #app { position:fixed; inset:0; }
+  .panel { position:fixed; z-index:10; backdrop-filter:blur(14px);
+    background:rgba(10,12,24,.62); border:1px solid rgba(150,120,255,.16);
+    border-radius:14px; color:#e7e3ff; }
+  #hud { top:18px; left:18px; padding:16px 18px; max-width:380px; }
+  #hud h1 { font-size:15px; font-weight:650; }
+  #hud .phase { margin-top:9px; font-size:13.5px; font-weight:650; color:#cdb6ff; }
+  #hud .formula { margin-top:8px; font-size:13px; line-height:1.5; color:#9be0c0;
+    font-family:"SF Mono",ui-monospace,Menlo,monospace; }
+  #hud p { margin-top:9px; font-size:12px; line-height:1.55; color:#b3a8d8; }
+  #hud .mode { display:inline-block; margin-top:10px; font-size:11px; padding:3px 10px;
+    border-radius:999px; }
+  .mGRPO { background:rgba(90,140,255,.22); color:#9fc0ff; border:1px solid rgba(120,150,255,.4); }
+  .mDR   { background:rgba(77,255,158,.16); color:#7dffbe; border:1px solid rgba(77,255,158,.4); }
+  #ctrls { bottom:18px; left:18px; padding:11px 13px; display:flex; gap:8px; align-items:center; }
+  #ctrls button { font:inherit; font-size:11.5px; color:#dfe0ff; cursor:pointer;
+    background:rgba(120,110,200,.16); border:1px solid rgba(150,120,255,.3);
+    border-radius:9px; padding:6px 11px; }
+  #ctrls button:hover { background:rgba(140,120,240,.3); }
+  #ctrls button.on { background:rgba(77,255,158,.22); border-color:rgba(77,255,158,.5); color:#aaffd6; }
+  #legend { bottom:18px; right:18px; padding:11px 14px; font-size:11px; line-height:1.85; color:#c8c0e8; }
+  #legend .sw{ display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:7px; vertical-align:middle; }
+  #hint{ top:18px; right:18px; padding:9px 14px; font-size:11px; color:#9a90c0;}
+  @media (max-width:820px){ #legend{display:none;} #hud{max-width:300px;} }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="hud" class="panel">
+  <h1>GRPO — advantage dynamics &amp; the length bias</h1>
+  <div class="phase" id="phaseName">—</div>
+  <div class="formula" id="formula">—</div>
+  <p id="phaseDesc">—</p>
+  <span class="mode mGRPO" id="modeBadge">GRPO</span>
+</div>
+<div id="ctrls" class="panel">
+  <span style="font-size:11px;color:#9a90c0">mode</span>
+  <button id="bAuto" class="on">Auto ⇄</button>
+  <button id="bGRPO">GRPO</button>
+  <button id="bDR">Dr. GRPO</button>
+  <button id="bReplay">↻ replay</button>
+</div>
+<div id="legend" class="panel">
+  <div><span class="sw" style="background:#66e0ff"></span>token / rollout cell</div>
+  <div><span class="sw" style="background:#4dff9e"></span>positive advantage (push ↑)</div>
+  <div><span class="sw" style="background:#ff5a6a"></span>negative advantage (push ↓)</div>
+  <div><span class="sw" style="background:#ffd27a"></span>reward&nbsp;rᵢ &nbsp;·&nbsp; mean / std baseline</div>
+</div>
+<div id="hint" class="panel">drag = orbit · scroll = zoom</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+// ── renderer / scene ────────────────────────────────────────────────────────
+const app=document.getElementById('app');
+const scene=new THREE.Scene();
+scene.background=new THREE.Color('#03040a');
+scene.fog=new THREE.FogExp2('#04050c',0.014);
+
+const camera=new THREE.PerspectiveCamera(50, innerWidth/innerHeight, 0.1, 400);
+camera.position.set(-3.5, 3.2, 28);
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight); renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.12;
+app.appendChild(renderer.domElement);
+
+const composer=new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene,camera));
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),0.9,0.55,0.16));
+
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true; controls.dampingFactor=0.07; controls.target.set(-2.5,0,0);
+controls.minDistance=10; controls.maxDistance=70;
+
+scene.add(new THREE.HemisphereLight('#8a7bff','#05060d',0.55));
+const pt=new THREE.PointLight('#a07bff',26,90); pt.position.set(-2,10,12); scene.add(pt);
+
+// ── helpers ─────────────────────────────────────────────────────────────────
+const sphGeo=new THREE.IcosahedronGeometry(1,3);
+function node(color,x,y,z,r=0.5){
+  const m=new THREE.Mesh(sphGeo,new THREE.MeshStandardMaterial({
+    color, emissive:color, emissiveIntensity:1.3, roughness:0.3 }));
+  m.position.set(x,y,z); m.scale.setScalar(r); scene.add(m); m.userData.base=r; return m;
+}
+function glowLine(p1,p2,color,opacity=0.3,bow=0){
+  let pts;
+  if(bow){ const mid=new THREE.Vector3().addVectors(p1,p2).multiplyScalar(0.5); mid.y+=bow;
+    pts=new THREE.QuadraticBezierCurve3(p1,mid,p2).getPoints(24); }
+  else pts=[p1,p2];
+  const g=new THREE.BufferGeometry().setFromPoints(pts);
+  const l=new THREE.Line(g,new THREE.LineBasicMaterial({color,transparent:true,opacity,
+    blending:THREE.AdditiveBlending,depthWrite:false}));
+  scene.add(l); return l;
+}
+function staticLabel(text,x,y,z,col='#b9b2e0',size=34){
+  const c=document.createElement('canvas'),g=c.getContext('2d');
+  g.font=`600 ${size}px Inter,sans-serif`; const w=g.measureText(text).width;
+  c.width=w+30; c.height=size+18; g.font=`600 ${size}px Inter,sans-serif`;
+  g.fillStyle=col; g.textBaseline='middle'; g.fillText(text,15,c.height/2);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),
+    transparent:true,depthWrite:false,depthTest:false}));
+  sp.scale.set(c.width/c.height*0.8,0.8,1); sp.position.set(x,y,z); sp.renderOrder=4; scene.add(sp);
+  return sp;
+}
+// updatable label (canvas redrawn only when text/color change).
+// Drawn as a dark rounded "chip" so it stays readable on top of bright bloomed bars.
+function dynLabel(x,y,z,size=30,scale=1){
+  const c=document.createElement('canvas'); c.width=380; c.height=110;
+  const tex=new THREE.CanvasTexture(c);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthWrite:false,depthTest:false}));
+  sp.scale.set(380/110*scale, scale, 1); sp.position.set(x,y,z); sp.renderOrder=6; scene.add(sp);
+  let last='';
+  return { sp, set(text,col='#e7e3ff'){
+    const key=text+'|'+col; if(key===last) return; last=key;
+    const g=c.getContext('2d'); g.clearRect(0,0,c.width,c.height);
+    g.font=`700 ${size}px "SF Mono",Menlo,monospace`;
+    const tw=g.measureText(text).width;
+    const bw=Math.min(c.width-6, tw+46), bh=size+34, bx=(c.width-bw)/2, by=(c.height-bh)/2;
+    g.beginPath();
+    if(g.roundRect) g.roundRect(bx,by,bw,bh,16); else g.rect(bx,by,bw,bh);
+    g.fillStyle='rgba(5,7,14,0.82)'; g.fill();
+    g.lineWidth=2; g.strokeStyle=col; g.globalAlpha=0.5; g.stroke(); g.globalAlpha=1;
+    g.shadowBlur=0; g.fillStyle=col; g.textAlign='center'; g.textBaseline='middle';
+    g.fillText(text,c.width/2,c.height/2+1);
+    tex.needsUpdate=true;
+  }, vis(v){ sp.visible=v; } };
+}
+const lerp=(a,b,t)=>a+(b-a)*t;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const easeIO=t=>t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+const cMix=(hexA,hexB,t)=>new THREE.Color(hexA).lerp(new THREE.Color(hexB),clamp(t,0,1));
+
+// ── the group: 4 rollouts of DIFFERENT length ───────────────────────────────
+const COL={ tok:'#66e0ff', pos:'#4dff9e', neg:'#ff5a6a', rew:'#ffd27a',
+  policy:'#b48bff', prompt:'#6ad0ff', mean:'#ffd27a' };
+const lens=[12,4,8,6];                 // |o_i|  (token counts)
+const rew =[1, 0, 1, 1];               // r_i    (verifier: 1 correct / 0 wrong)
+const G=lens.length;
+const mean = rew.reduce((a,b)=>a+b,0)/G;                       // 0.75
+const variance = rew.reduce((a,b)=>a+(b-mean)*(b-mean),0)/G;
+const std = Math.sqrt(variance);                              // ~0.433
+const L_CONST = 8;                                            // Dr.GRPO constant normalizer
+// advantages per mode
+const advGRPO = rew.map(r=>(r-mean)/std);
+const advDR   = rew.map(r=> r-mean);
+// per-token gradient weight g_i
+const gGRPO = advGRPO.map((a,i)=>a/lens[i]);                  // length bias lives here
+const gDR   = advDR.map(a=>a/L_CONST);                        // length-independent
+
+const yR=[5.0, 1.7, -1.6, -4.9];       // rollout rows
+const xStart=-8.4, dx=0.62, cellGeo=new THREE.BoxGeometry(0.5,0.5,0.14);
+
+// prompt → policy
+const prompt=node(COL.prompt,-15.5,0,0,0.55);  staticLabel('prompt q',-15.5,1.25,0,'#9fe8ff',30);
+const policy=node(COL.policy,-11.5,0,0,0.85);  staticLabel('policy  π_θ',-11.5,2.5,0,'#cdb6ff',30);
+glowLine(prompt.position,policy.position,COL.prompt,0.4);
+
+// rollout strips
+const rollouts=[];
+for(let i=0;i<G;i++){
+  const cells=[];
+  for(let j=0;j<lens[i];j++){
+    const mat=new THREE.MeshStandardMaterial({color:COL.tok,emissive:COL.tok,
+      emissiveIntensity:0.5,roughness:0.4,transparent:true,opacity:0.95});
+    const m=new THREE.Mesh(cellGeo,mat);
+    m.position.set(xStart+j*dx, yR[i], 0); m.scale.setScalar(0.001);
+    m.userData={base:1, tgt:0}; scene.add(m); cells.push(m);
+  }
+  const xEnd=xStart+(lens[i]-1)*dx;
+  glowLine(policy.position,new THREE.Vector3(xStart,yR[i],0),COL.policy,0.2);
+  const oLab=staticLabel(`o${i+1}  |o|=${lens[i]}`, xStart-1.55, yR[i], 0, '#9fb6e8', 26);
+  const rLab=dynLabel(xEnd+1.25, yR[i], 0, 30, 0.85);     // reward value
+  const gLab=dynLabel(xEnd+1.25, yR[i]-0.62, 0, 22, 0.62); // per-token weight
+  rollouts.push({cells,xEnd,rLab,gLab,oLab});
+}
+staticLabel('a group of G rollouts — different lengths', xStart+2.4, yR[0]+1.5, 0, '#8ea0d0', 24);
+
+// ── advantage / baseline panel (right) ──────────────────────────────────────
+const xPanelC=8.0, scaleV=2.1, barDX=1.25;
+const barX=i=> xPanelC+(i-(G-1)/2)*barDX;
+const spanX=G*barDX+0.5;
+staticLabel('reward → advantage', xPanelC, 5.4, 0, '#cdb6ff', 26);
+const barGeo=new THREE.BoxGeometry(0.7,1,0.7);
+const bars=[];
+for(let i=0;i<G;i++){
+  const col = COL.rew;
+  const mat=new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:1.0,
+    roughness:0.35,transparent:true,opacity:0.94});
+  const m=new THREE.Mesh(barGeo,mat); m.position.set(barX(i),0,0.6); scene.add(m);
+  const vLab=dynLabel(barX(i), 0, 1.0, 22, 0.62);
+  staticLabel('o'+(i+1), barX(i), -5.7, 0, '#7e8cc0', 22);   // which rollout this bar is
+  bars.push({m,vLab, state:{val:0, color:0}});  // val in reward/adv units; color 0=reward,1=signed
+}
+// mean line + std band + zero axis spanning the bars (along X).
+// Kept thin and set BEHIND the bars (which sit at z=0.6) to avoid z-fighting flicker.
+const meanLine=new THREE.Mesh(new THREE.BoxGeometry(spanX,0.07,0.35),
+  new THREE.MeshStandardMaterial({color:COL.mean,emissive:COL.mean,emissiveIntensity:1.4,transparent:true,opacity:0.9}));
+meanLine.position.set(xPanelC,0,-0.1); scene.add(meanLine);
+const stdBand=new THREE.Mesh(new THREE.BoxGeometry(spanX,1,0.3),
+  new THREE.MeshStandardMaterial({color:COL.mean,emissive:COL.mean,emissiveIntensity:0.5,
+    transparent:true,opacity:0.0,depthWrite:false}));
+stdBand.position.set(xPanelC,0,-0.3); stdBand.renderOrder=-1; scene.add(stdBand);
+const meanLab=dynLabel(xPanelC+spanX/2+1.5, mean*scaleV, 0.6, 22, 0.6);
+const stdLab =dynLabel(xPanelC+spanX/2+1.5, mean*scaleV-0.8, 0.6, 20, 0.54);
+const axis=new THREE.Mesh(new THREE.BoxGeometry(spanX,0.03,0.35),
+  new THREE.MeshStandardMaterial({color:'#54608f',emissive:'#54608f',emissiveIntensity:0.7,transparent:true,opacity:0.35}));
+axis.position.set(xPanelC,0,-0.1); scene.add(axis);
+
+// ── back-flow gradient pulses (strip → policy) ──────────────────────────────
+const PPER=16, PN=G*PPER;
+const pPos=new Float32Array(PN*3), pCol=new Float32Array(PN*3);
+const pSeed=[];
+for(let i=0;i<G;i++) for(let k=0;k<PPER;k++){ pSeed.push({roll:i, p:Math.random(), v:0.18+Math.random()*0.14}); }
+const pGeo=new THREE.BufferGeometry();
+pGeo.setAttribute('position',new THREE.BufferAttribute(pPos,3));
+pGeo.setAttribute('color',new THREE.BufferAttribute(pCol,3));
+const backFlow=new THREE.Points(pGeo,new THREE.PointsMaterial({size:0.22,vertexColors:true,
+  transparent:true,opacity:0.0,blending:THREE.AdditiveBlending,depthWrite:false}));
+scene.add(backFlow);
+
+// forward generation pulses (policy → strips) during sampling
+const FN=60, fPos=new Float32Array(FN*3), fSeed=[];
+for(let i=0;i<FN;i++) fSeed.push({roll:i%G, p:Math.random(), v:0.2+Math.random()*0.15});
+const fGeo=new THREE.BufferGeometry(); fGeo.setAttribute('position',new THREE.BufferAttribute(fPos,3));
+const fwdFlow=new THREE.Points(fGeo,new THREE.PointsMaterial({color:'#eafaff',size:0.16,
+  transparent:true,opacity:0.0,blending:THREE.AdditiveBlending,depthWrite:false}));
+scene.add(fwdFlow);
+
+// ── phase timeline ──────────────────────────────────────────────────────────
+const PHASES=[
+  {id:'rollouts', dur:5.5, title:'1 · Sample a group of G rollouts',
+   desc:'For one prompt q, the policy samples G completions of different lengths |oᵢ|.'},
+  {id:'reward', dur:3.2, title:'2 · Verifier assigns a reward rᵢ',
+   desc:'Each rollout is scored. Here r = [1, 0, 1, 1] — three correct, one wrong.'},
+  {id:'baseline', dur:3.2, title:'3 · Group baseline: mean(r), std(r)',
+   desc:'The group itself is the baseline — no critic network. mean(r)=0.75, std(r)≈0.43.'},
+  {id:'advantage', dur:5.0, title:'4 · Advantage  Âᵢ = (rᵢ − mean)/std',
+   desc:'Subtract the mean (center on zero), then divide by std (normalize spread).'},
+  {id:'lengthnorm', dur:4.0, title:'5 · Per-token weight  gᵢ = Âᵢ / |oᵢ|',
+   desc:'The advantage is spread over the tokens. Long rollouts → diluted per-token push.'},
+  {id:'gradient', dur:6.5, title:'6 · Policy gradient on every token',
+   desc:'Every token in a rollout is pushed by gᵢ — green up (good), red down (bad).'},
+];
+const PASS=PHASES.reduce((a,p)=>a+p.dur,0);
+function phaseAt(localT){
+  let acc=0;
+  for(let i=0;i<PHASES.length;i++){ const d=PHASES[i].dur;
+    if(localT<acc+d) return {idx:i, prog:(localT-acc)/d, ph:PHASES[i]};
+    acc+=d; }
+  return {idx:PHASES.length-1, prog:1, ph:PHASES[PHASES.length-1]};
+}
+
+// ── mode control ────────────────────────────────────────────────────────────
+let modeForced=null;            // null = auto-toggle; 0 = GRPO; 1 = Dr.GRPO
+let t0=0;                       // timeline origin (for replay)
+const bAuto=document.getElementById('bAuto'), bG=document.getElementById('bGRPO'),
+      bD=document.getElementById('bDR'), bRe=document.getElementById('bReplay');
+function setBtns(){ bAuto.classList.toggle('on',modeForced===null);
+  bG.classList.toggle('on',modeForced===0); bD.classList.toggle('on',modeForced===1); }
+bAuto.onclick=()=>{modeForced=null;setBtns();};
+bG.onclick=()=>{modeForced=0;setBtns();};
+bD.onclick=()=>{modeForced=1;setBtns();};
+bRe.onclick=()=>{ t0=clock.getElapsedTime(); };
+
+const phaseName=document.getElementById('phaseName'), formulaEl=document.getElementById('formula'),
+      phaseDesc=document.getElementById('phaseDesc'), modeBadge=document.getElementById('modeBadge');
+
+// ── animation loop ──────────────────────────────────────────────────────────
+const clock=new THREE.Clock(); const tmp=new THREE.Vector3();
+const allNodes=[prompt,policy];
+
+function loop(){
+  requestAnimationFrame(loop);
+  const t=clock.getElapsedTime();
+  const tl=(t-t0);
+  const pass=Math.floor(tl/PASS);
+  const localT=tl-pass*PASS;
+  const mode = modeForced!==null ? modeForced : (pass%2);     // 0 GRPO, 1 Dr.GRPO
+  const {idx,prog,ph}=phaseAt(localT);
+  const adv = mode? advDR : advGRPO;
+  const gw  = mode? gDR : gGRPO;
+
+  // node breathing
+  for(const m of allNodes){ const b=1.0+0.4*Math.sin(t*2.2+m.position.x*0.4);
+    m.material.emissiveIntensity=b; m.scale.setScalar(m.userData.base*(0.96+0.06*Math.sin(t*2.6+m.position.x))); }
+
+  // ── rollout cell reveal + per-token gradient glow ──
+  for(let i=0;i<G;i++){
+    const R=rollouts[i], n=lens[i];
+    let revealed=n;
+    if(idx===0) revealed=Math.floor(easeIO(clamp(prog,0,1))*n+0.001);
+    // gradient strength active in lengthnorm(partial) + gradient phases
+    let gStrength=0;
+    if(idx===4) gStrength=easeIO(clamp((prog-0.3)/0.7,0,1))*0.6;
+    if(idx===5) gStrength=1;
+    const sign = adv[i]>=0?1:-1;
+    const sgnCol = adv[i]>=0?COL.pos:COL.neg;
+    const boost = Math.min(Math.abs(gw[i])*3.6, 1.0);   // per-token magnitude, capped so the big negative push stays bright but doesn't blow out
+    for(let j=0;j<n;j++){
+      const m=R.cells[j];
+      const tgt = j<revealed ? 1 : 0;
+      m.userData.tgt += (tgt-m.userData.tgt)*0.25;
+      const pulse=0.5+0.5*Math.sin(t*4.0 - j*0.5 + i);
+      const gGlow = gStrength*boost*pulse;
+      const baseS = m.userData.tgt;
+      m.scale.setScalar(baseS*(0.5+0.5) * (1 + 0.5*gGlow));
+      m.material.emissiveIntensity = 0.45 + 1.5*gGlow;
+      // color: cyan token → signed color as gradient turns on
+      m.material.color.copy(cMix(COL.tok,sgnCol,gStrength));
+      m.material.emissive.copy(cMix(COL.tok,sgnCol,gStrength));
+    }
+    // labels
+    R.rLab.vis(idx>=1); R.rLab.set('r = '+rew[i], COL.rew);
+    if(idx>=4){ R.gLab.vis(true);
+      const gtxt = (gw[i]>=0?'+':'')+gw[i].toFixed(3);
+      R.gLab.set('g = Â/'+(mode?L_CONST:('|o|='+lens[i]))+' = '+gtxt, sgnCol);
+    } else R.gLab.vis(false);
+  }
+
+  // ── panel bars: reward → advantage morph ──
+  // target value (in advantage units) + reference (mean line height)
+  let meanY = mean*scaleV, bandOp=0, axisShow=0;
+  for(let i=0;i<G;i++){
+    const B=bars[i]; let val, colorMix;
+    if(idx<=1){ val=rew[i]; colorMix=0; meanY=mean*scaleV; bandOp=0; }
+    else if(idx===2){ val=rew[i]; colorMix=0; meanY=mean*scaleV; bandOp=0.42; }
+    else if(idx===3){
+      // sub-phase: subtract (0..0.5) then divide (0.5..1)
+      const p=easeIO(prog);
+      if(p<0.5){ const s=p/0.5; val=lerp(rew[i],rew[i]-mean,s); meanY=lerp(mean*scaleV,0,s);
+                 colorMix=s; bandOp=lerp(0.42,0.2,s); }
+      else { const s=(p-0.5)/0.5; val=lerp(rew[i]-mean, adv[i], s); meanY=0; colorMix=1; bandOp=lerp(0.2,0,s); }
+    } else { val=adv[i]; colorMix=1; meanY=0; bandOp=0; axisShow=1; }
+    // smooth + apply
+    B.state.val += (val-B.state.val)*0.18;
+    B.state.color += (colorMix-B.state.color)*0.18;
+    const v=B.state.val, h=Math.max(Math.abs(v)*scaleV,0.02), sgn=v>=0?1:-1;
+    B.m.scale.y=h; B.m.position.y=sgn*h/2;
+    const target = v>=0?COL.pos:COL.neg;
+    B.m.material.color.copy(cMix(COL.rew,target,B.state.color));
+    B.m.material.emissive.copy(cMix(COL.rew,target,B.state.color));
+    B.m.material.emissiveIntensity=0.62+0.16*Math.sin(t*3+i);
+    // value label
+    B.vLab.vis(idx>=1);
+    if(idx<=2) B.vLab.set('r='+rew[i], COL.rew);
+    else { const txt=(adv[i]>=0?'Â=+':'Â=')+adv[i].toFixed(2); B.vLab.set(txt, adv[i]>=0?COL.pos:COL.neg); }
+    B.vLab.sp.position.y = sgn*h + sgn*0.35 + (v>=0?0.1:-0.1);
+  }
+  // mean line + std band + axis
+  meanLine.position.y += (meanY-meanLine.position.y)*0.18;
+  meanLine.visible = idx>=2 && idx<=3;
+  stdBand.scale.y = 2*std*scaleV; stdBand.position.y=meanLine.position.y;
+  stdBand.material.opacity += (bandOp-stdBand.material.opacity)*0.15;
+  axis.material.opacity = lerp(axis.material.opacity, idx>=3?0.4:0.0, 0.15);
+  meanLab.vis(idx>=2&&idx<=3); meanLab.set('mean(r)='+mean.toFixed(2), COL.mean);
+  meanLab.sp.position.y=meanLine.position.y+0.05;
+  stdLab.vis(idx>=2&&idx<=3); stdLab.set('std(r)='+std.toFixed(2)+(mode?'  (ignored)':''), mode?'#ff9aa8':COL.mean);
+  stdLab.sp.position.y=meanLine.position.y-0.7;
+
+  // ── forward sampling pulses (policy → strips) ──
+  fwdFlow.material.opacity += ((idx===0?0.95:0)-fwdFlow.material.opacity)*0.1;
+  if(fwdFlow.material.opacity>0.02){
+    for(let i=0;i<FN;i++){ const s=fSeed[i]; s.p+=s.v*0.02; if(s.p>1)s.p-=1;
+      const R=rollouts[s.roll]; const ex=clamp(s.p,0,1);
+      fPos[i*3]=lerp(policy.position.x, R.xEnd, ex);
+      fPos[i*3+1]=lerp(0, yR[s.roll], Math.min(1,ex*1.6));
+      fPos[i*3+2]=0; }
+    fGeo.attributes.position.needsUpdate=true;
+  }
+
+  // ── back-flow gradient pulses (strip → policy) ──
+  const bfOn = idx===5 ? 0.95 : 0;
+  backFlow.material.opacity += (bfOn-backFlow.material.opacity)*0.1;
+  if(backFlow.material.opacity>0.02){
+    for(let k=0;k<PN;k++){ const s=pSeed[k]; const i=s.roll;
+      const boost=Math.min(Math.abs(gw[i])*3.6, 1.0);
+      s.p+=s.v*0.02*(0.4+boost); if(s.p>1)s.p-=1;
+      const ex=clamp(s.p,0,1);
+      pPos[k*3]=lerp(rollouts[i].xEnd, policy.position.x, ex);
+      pPos[k*3+1]=lerp(yR[i],0,ex);
+      pPos[k*3+2]=0;
+      const c=new THREE.Color(adv[i]>=0?COL.pos:COL.neg).multiplyScalar(clamp(0.3+boost,0.3,1.6));
+      pCol[k*3]=c.r; pCol[k*3+1]=c.g; pCol[k*3+2]=c.b;
+    }
+    pGeo.attributes.position.needsUpdate=true; pGeo.attributes.color.needsUpdate=true;
+  }
+
+  // ── HUD ──
+  phaseName.textContent=ph.title; phaseDesc.textContent=ph.desc;
+  modeBadge.textContent = mode? 'Dr. GRPO  (debiased)' : 'GRPO  (original)';
+  modeBadge.className = 'mode '+(mode?'mDR':'mGRPO');
+  if(idx<=2) formulaEl.textContent = 'r = [1, 0, 1, 1]   mean=0.75   std=0.43';
+  else if(idx===3) formulaEl.textContent = mode
+    ? 'Dr.GRPO:  Âᵢ = rᵢ − mean(r)        (no ÷ std)'
+    : 'GRPO:  Âᵢ = (rᵢ − mean(r)) / std(r)';
+  else formulaEl.textContent = mode
+    ? 'gᵢ = Âᵢ / L_const   → every token equal (no length bias)'
+    : 'gᵢ = Âᵢ / |oᵢ|   → long rollout ⇒ diluted per-token push';
+
+  controls.update(); composer.render();
+}
+
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight); composer.setSize(innerWidth,innerHeight);
+});
+
+// expose the scene-graph node ids (notes / voice-chat anchor contract)
+window.GRPO_NODES=[
+  {id:'prompt',label:'prompt q',type:'io'},
+  {id:'policy',label:'policy π_θ',type:'attn'},
+  ...lens.map((L,i)=>({id:'o'+(i+1),label:`rollout o${i+1} (|o|=${L})`,type:'head'})),
+  {id:'reward',label:'reward rᵢ',type:'val'},
+  {id:'mean',label:'group mean(r)',type:'norm'},
+  {id:'std',label:'group std(r)',type:'norm'},
+  {id:'adv',label:'advantage Âᵢ',type:'res'},
+  {id:'lennorm',label:'per-token gᵢ=Âᵢ/|oᵢ|',type:'res'},
+  {id:'grad',label:'policy gradient',type:'ffn'},
+  {id:'drstd',label:'Dr.GRPO drop /std',type:'res'},
+  {id:'drlen',label:'Dr.GRPO drop 1/|o|',type:'res'},
+];
+setBtns();
+loop();
+</script>
+</body>
+</html>
