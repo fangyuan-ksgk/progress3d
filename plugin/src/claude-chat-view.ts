@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf, Notice } from "obsidian";
+import { ItemView, WorkspaceLeaf, Notice, MarkdownRenderer } from "obsidian";
 import type Progress3DPlugin from "./main";
 import { askClaude } from "./claude-cli";
 import { SketchModal } from "./sketch-modal";
@@ -56,9 +56,24 @@ export class ClaudeChatView extends ItemView {
 
   private append(role: "user" | "assistant", text: string) {
     const d = this.logEl.createDiv({ cls: `p3d-chat-msg p3d-chat-${role}` });
-    d.setText(text);
+    this.setMsg(d, role, text);
     this.logEl.scrollTop = this.logEl.scrollHeight;
     return d;
+  }
+
+  // Assistant replies are Markdown — render them with Obsidian's own renderer so headings,
+  // bold, code fences, lists, and LaTeX format instead of showing raw `##`/`**`/``` ```.
+  // User turns stay plain text (no accidental formatting of what they typed).
+  private setMsg(el: any, role: "user" | "assistant", text: string) {
+    el.empty();
+    if (role !== "assistant") { el.setText(text); return; }
+    try {
+      const MR: any = MarkdownRenderer;
+      if (MR?.render) MR.render(this.app, text, el, this.plugin.folder || "", this);
+      else if (MR?.renderMarkdown) MR.renderMarkdown(text, el, this.plugin.folder || "", this);
+      else el.setText(text);
+    } catch { el.setText(text); }
+    this.logEl.scrollTop = this.logEl.scrollHeight;
   }
 
   private async captureSelection() {
@@ -148,7 +163,7 @@ export class ClaudeChatView extends ItemView {
     if (r.error) {
       pending.setText("⚠ " + r.error);
     } else {
-      pending.setText(r.text);
+      this.setMsg(pending, "assistant", r.text);
       this.sessionId = r.sessionId;
     }
     this.sel = null;

@@ -75,7 +75,15 @@
 .p3d-chat-log { flex: 1; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
 .p3d-chat-log.p3d-collapsed { display: none; }
 .p3d-chat-msg { padding: 8px 11px; border-radius: 10px; font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
-.p3d-chat-assistant { background: rgba(120, 150, 255, 0.12); align-self: flex-start; max-width: 92%; }
+.p3d-chat-assistant { background: rgba(120, 150, 255, 0.12); align-self: flex-start; max-width: 92%; white-space: normal; overflow-wrap: anywhere; }
+/* Rendered-markdown replies: tighten block spacing, fit code/headings in the narrow panel. */
+.p3d-chat-assistant > :first-child { margin-top: 0; }
+.p3d-chat-assistant > :last-child { margin-bottom: 0; }
+.p3d-chat-assistant p, .p3d-chat-assistant ul, .p3d-chat-assistant ol { margin: 0.4em 0; }
+.p3d-chat-assistant h1, .p3d-chat-assistant h2, .p3d-chat-assistant h3, .p3d-chat-assistant h4 { font-size: 1.05em; margin: 0.6em 0 0.3em; }
+.p3d-chat-assistant pre { overflow-x: auto; max-width: 100%; padding: 8px; border-radius: 6px; }
+.p3d-chat-assistant pre code { white-space: pre; }
+.p3d-chat-assistant code { font-size: 0.92em; }
 .p3d-chat-user { background: rgba(80, 220, 160, 0.14); align-self: flex-end; max-width: 92%; }
 .p3d-chat-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px; }
 .p3d-chat-chips.p3d-collapsed { display: none; }
