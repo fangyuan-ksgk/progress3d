@@ -54,6 +54,11 @@ const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const easeIO = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
 const cMix = (a: string, b: string, t: number) => new THREE.Color(a).lerp(new THREE.Color(b), clamp(t, 0, 1));
+const wrapText = (g: any, text: string, maxW: number): string[] => {
+  const words = (text || "").split(" "); const lines: string[] = []; let cur = "";
+  for (const w of words) { const t = cur ? cur + " " + w : w; if (g.measureText(t).width > maxW && cur) { lines.push(cur); cur = w; } else cur = t; }
+  if (cur) lines.push(cur); return lines;
+};
 
 export class GrpoScene {
   private root: THREE.Group;
@@ -80,9 +85,12 @@ export class GrpoScene {
 
   private pickList: THREE.Mesh[] = [];
 
-  // HUD (info only — mode is driven by the view's toolbar button via setMode)
-  private hud!: HTMLElement;
-  private hPhase!: HTMLElement; private hFormula!: HTMLElement; private hDesc!: HTMLElement; private hBadge!: HTMLElement;
+  // HUD info panel — an IN-SCENE canvas sprite (lives in 3D, scales with zoom, pans with the
+  // scene), not a fixed-scale DOM overlay. Mode is driven by the view's toolbar via setMode.
+  private panel!: THREE.Sprite; private panelCanvas!: HTMLCanvasElement; private panelTex!: THREE.CanvasTexture;
+  private pPhase = ""; private pFormula = ""; private pDesc = "";
+  private pBadge: { text: string; fg: string; bg: string; border: string } = { text: "", fg: "", bg: "", border: "" };
+  private panelKey = "";
 
   private modeForced: number | null = null; // null = auto-toggle each pass
   private t0 = -1;                            // timeline origin (set on first update)
@@ -237,29 +245,54 @@ export class GrpoScene {
     }));
     this.root.add(this.fwdFlow);
 
-    this.buildHud();
+    this.buildPanel();
   }
 
-  private buildHud() {
-    const css = (el: HTMLElement, s: Record<string, string>) => Object.assign(el.style, s);
-    const hud = document.createElement("div");
-    css(hud, {
-      position: "absolute", top: "54px", left: "14px", zIndex: "20", maxWidth: "360px",
-      padding: "13px 15px", borderRadius: "13px", backdropFilter: "blur(12px)",
-      background: "rgba(10,12,24,0.62)", border: "1px solid rgba(150,120,255,0.18)",
-      color: "#e7e3ff", font: '13px -apple-system,"SF Pro Text",Inter,system-ui,sans-serif',
-      pointerEvents: "none", // info panel — never swallow orbit/clicks on the canvas
-    });
-    const h1 = document.createElement("div"); h1.textContent = "GRPO — advantage dynamics & the length bias";
-    css(h1, { fontSize: "14px", fontWeight: "650" });
-    this.hPhase = document.createElement("div"); css(this.hPhase, { marginTop: "8px", fontSize: "13px", fontWeight: "650", color: "#cdb6ff" });
-    this.hFormula = document.createElement("div"); css(this.hFormula, { marginTop: "7px", fontSize: "12.5px", color: "#9be0c0", fontFamily: '"SF Mono",ui-monospace,Menlo,monospace' });
-    this.hDesc = document.createElement("div"); css(this.hDesc, { marginTop: "7px", fontSize: "11.5px", lineHeight: "1.5", color: "#b3a8d8" });
-    this.hBadge = document.createElement("span"); css(this.hBadge, { display: "inline-block", marginTop: "9px", fontSize: "11px", padding: "3px 10px", borderRadius: "999px" });
+  // The info panel as a world-space sprite: anchored above the rollouts, faces the camera (always
+  // readable), but is real 3D geometry — perspective scales it as you zoom and it pans off-screen
+  // when you focus elsewhere, instead of being a fixed-size DOM card you can never zoom past.
+  private readonly PW = 760; private readonly PH = 400; // logical canvas size
+  private buildPanel() {
+    const DPR = 2;
+    const c = document.createElement("canvas"); c.width = this.PW * DPR; c.height = this.PH * DPR;
+    this.panelCanvas = c; this.panelTex = new THREE.CanvasTexture(c); this.panelTex.anisotropy = 4;
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.panelTex, transparent: true, depthWrite: false, depthTest: false }));
+    const worldW = 12; sp.scale.set(worldW, (worldW * this.PH) / this.PW, 1);
+    sp.position.set(-5, -9, 0); sp.renderOrder = 10; // below the animation, clear of toolbar + labels
+    this.root.add(sp); this.panel = sp;
+    this.renderPanel();
+  }
 
-    hud.appendChild(h1); hud.appendChild(this.hPhase); hud.appendChild(this.hFormula);
-    hud.appendChild(this.hDesc); hud.appendChild(this.hBadge);
-    this.host.appendChild(hud); this.hud = hud;
+  private renderPanel() {
+    const key = [this.pPhase, this.pFormula, this.pDesc, this.pBadge.text, this.pBadge.fg].join("|");
+    if (key === this.panelKey) return; this.panelKey = key;
+    const W = this.PW, H = this.PH, pad = 30, DPR = 2;
+    const g = this.panelCanvas.getContext("2d")! as any;
+    g.setTransform(DPR, 0, 0, DPR, 0, 0); g.clearRect(0, 0, W, H);
+    g.beginPath();
+    if (g.roundRect) g.roundRect(8, 8, W - 16, H - 16, 20); else g.rect(8, 8, W - 16, H - 16);
+    g.fillStyle = "rgba(10,12,24,0.82)"; g.fill();
+    g.lineWidth = 2; g.strokeStyle = "rgba(150,120,255,0.35)"; g.stroke();
+    g.textAlign = "left"; g.textBaseline = "alphabetic";
+    g.fillStyle = "#ffffff"; g.font = '700 25px Inter, system-ui, sans-serif';
+    g.fillText("GRPO — advantage dynamics & the length bias", pad, 48);
+    g.fillStyle = "#cdb6ff"; g.font = '700 23px Inter, system-ui, sans-serif';
+    g.fillText(this.pPhase, pad, 90);
+    g.fillStyle = "#9be0c0"; // shrink the formula to fit instead of clipping it at the edge
+    let fsz = 22; do { g.font = `700 ${fsz}px "SF Mono", Menlo, monospace`; } while (g.measureText(this.pFormula).width > W - pad * 2 && --fsz > 12);
+    g.fillText(this.pFormula, pad, 128);
+    g.fillStyle = "#b3a8d8"; g.font = '21px Inter, system-ui, sans-serif';
+    let y = 164; for (const line of wrapText(g, this.pDesc, W - pad * 2)) { g.fillText(line, pad, y); y += 28; }
+    const by = Math.max(y + 10, 250);
+    g.font = '600 19px Inter, system-ui, sans-serif';
+    const bw = g.measureText(this.pBadge.text).width + 30;
+    g.beginPath();
+    if (g.roundRect) g.roundRect(pad, by, bw, 36, 18); else g.rect(pad, by, bw, 36);
+    g.fillStyle = this.pBadge.bg; g.fill();
+    g.lineWidth = 1.5; g.strokeStyle = this.pBadge.border; g.stroke();
+    g.fillStyle = this.pBadge.fg; g.textBaseline = "middle";
+    g.fillText(this.pBadge.text, pad + 15, by + 19);
+    this.panelTex.needsUpdate = true;
   }
 
   // driven by the view's toolbar mode button
@@ -392,14 +425,15 @@ export class GrpoScene {
       this.backFlow.geometry.getAttribute("color").needsUpdate = true;
     }
 
-    // HUD
-    this.hPhase.textContent = ph.title; this.hDesc.textContent = ph.desc;
-    this.hBadge.textContent = mode ? "Dr. GRPO  (debiased)" : "GRPO  (original)";
-    if (mode) { this.hBadge.style.background = "rgba(77,255,158,0.16)"; this.hBadge.style.color = "#7dffbe"; this.hBadge.style.border = "1px solid rgba(77,255,158,0.4)"; }
-    else { this.hBadge.style.background = "rgba(90,140,255,0.22)"; this.hBadge.style.color = "#9fc0ff"; this.hBadge.style.border = "1px solid rgba(120,150,255,0.4)"; }
-    if (idx <= 2) this.hFormula.textContent = "r = [1, 0, 1, 1]   mean=0.75   std=0.43";
-    else if (idx === 3) this.hFormula.textContent = mode ? "Dr.GRPO:  Âᵢ = rᵢ − mean(r)        (no ÷ std)" : "GRPO:  Âᵢ = (rᵢ − mean(r)) / std(r)";
-    else this.hFormula.textContent = mode ? "gᵢ = Âᵢ / L_const   → every token equal (no length bias)" : "gᵢ = Âᵢ / |oᵢ|   → long rollout ⇒ diluted per-token push";
+    // HUD panel content (re-rendered into the in-scene sprite only when it changes)
+    this.pPhase = ph.title; this.pDesc = ph.desc;
+    this.pBadge = mode
+      ? { text: "Dr. GRPO  (debiased)", fg: "#7dffbe", bg: "rgba(77,255,158,0.16)", border: "rgba(77,255,158,0.45)" }
+      : { text: "GRPO  (original)", fg: "#9fc0ff", bg: "rgba(90,140,255,0.22)", border: "rgba(120,150,255,0.45)" };
+    if (idx <= 2) this.pFormula = "r = [1, 0, 1, 1]   mean=0.75   std=0.43";
+    else if (idx === 3) this.pFormula = mode ? "Dr.GRPO:  Âᵢ = rᵢ − mean(r)        (no ÷ std)" : "GRPO:  Âᵢ = (rᵢ − mean(r)) / std(r)";
+    else this.pFormula = mode ? "gᵢ = Âᵢ / L_const   → every token equal (no length bias)" : "gᵢ = Âᵢ / |oᵢ|   → long rollout ⇒ diluted per-token push";
+    this.renderPanel();
   }
 
   // clicking the policy / a rollout / a bar opens its note (ids match the grpo map notes)
@@ -415,7 +449,8 @@ export class GrpoScene {
 
   dispose() {
     if (this.controls) { this.controls.autoRotate = this.prevAutoRotate; this.controls.minDistance = 6; this.controls.maxDistance = 80; }
-    this.hud?.remove();
+    if (this.panel) this.root.remove(this.panel);
+    this.panelTex?.dispose();
     // geometry/material/texture disposal is handled by view.disposeScene()'s root.traverse()
   }
 }
