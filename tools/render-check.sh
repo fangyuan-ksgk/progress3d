@@ -62,4 +62,24 @@ else
   echo "  esbuild failed — run 'npm install' in plugin/ first"
 fi
 
+# Render the REAL plugin view with the bespoke animated `grpo` map active
+# (GrpoScene inside ResearchMapView) — both the GRPO and Dr. GRPO passes.
+echo "rendering the actual plugin view with the grpo animation (GrpoScene) →"
+if ( cd "$PLUGIN" && ./node_modules/.bin/esbuild ../tools/view-harness/harness-grpo.ts \
+      --bundle --format=iife --platform=browser \
+      --alias:obsidian=../tools/view-harness/obsidian-shim.ts \
+      --outfile=../tools/view-harness/bundle-grpo.js >/dev/null 2>&1 ); then
+  for mode in grpo dr; do
+    name="plugin-grpo-${mode}.png"
+    "$CHROME" --headless=new --hide-scrollbars \
+      --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader \
+      --window-size=1600,900 --virtual-time-budget=24000 \
+      --screenshot="$OUT/$name" "file://$DIR/view-harness/index-grpo.html?mode=$mode" >/dev/null 2>&1
+    b=$(wc -c < "$OUT/$name" | tr -d ' ')
+    echo "  $name  ($b bytes)  $([ "$b" -gt 20000 ] && echo 'rendered ✓' || echo 'SUSPICIOUS ✗')"
+  done
+else
+  echo "  esbuild failed bundling harness-grpo.ts"
+fi
+
 echo "open $OUT/ to view."

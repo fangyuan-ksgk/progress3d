@@ -80,10 +80,9 @@ export class GrpoScene {
 
   private pickList: THREE.Mesh[] = [];
 
-  // HUD
+  // HUD (info only — mode is driven by the view's toolbar button via setMode)
   private hud!: HTMLElement;
   private hPhase!: HTMLElement; private hFormula!: HTMLElement; private hDesc!: HTMLElement; private hBadge!: HTMLElement;
-  private bAuto!: HTMLButtonElement; private bG!: HTMLButtonElement; private bD!: HTMLButtonElement;
 
   private modeForced: number | null = null; // null = auto-toggle each pass
   private t0 = -1;                            // timeline origin (set on first update)
@@ -249,7 +248,7 @@ export class GrpoScene {
       padding: "13px 15px", borderRadius: "13px", backdropFilter: "blur(12px)",
       background: "rgba(10,12,24,0.62)", border: "1px solid rgba(150,120,255,0.18)",
       color: "#e7e3ff", font: '13px -apple-system,"SF Pro Text",Inter,system-ui,sans-serif',
-      pointerEvents: "auto",
+      pointerEvents: "none", // info panel — never swallow orbit/clicks on the canvas
     });
     const h1 = document.createElement("div"); h1.textContent = "GRPO — advantage dynamics & the length bias";
     css(h1, { fontSize: "14px", fontWeight: "650" });
@@ -257,33 +256,17 @@ export class GrpoScene {
     this.hFormula = document.createElement("div"); css(this.hFormula, { marginTop: "7px", fontSize: "12.5px", color: "#9be0c0", fontFamily: '"SF Mono",ui-monospace,Menlo,monospace' });
     this.hDesc = document.createElement("div"); css(this.hDesc, { marginTop: "7px", fontSize: "11.5px", lineHeight: "1.5", color: "#b3a8d8" });
     this.hBadge = document.createElement("span"); css(this.hBadge, { display: "inline-block", marginTop: "9px", fontSize: "11px", padding: "3px 10px", borderRadius: "999px" });
-
-    const ctr = document.createElement("div"); css(ctr, { marginTop: "11px", display: "flex", gap: "6px", flexWrap: "wrap" });
-    const mkBtn = (label: string) => {
-      const b = document.createElement("button"); b.textContent = label;
-      css(b, { font: "inherit", fontSize: "11px", color: "#dfe0ff", cursor: "pointer", background: "rgba(120,110,200,0.16)", border: "1px solid rgba(150,120,255,0.3)", borderRadius: "8px", padding: "5px 9px" });
-      ctr.appendChild(b); return b as HTMLButtonElement;
-    };
-    this.bAuto = mkBtn("Auto ⇄"); this.bG = mkBtn("GRPO"); this.bD = mkBtn("Dr. GRPO");
-    const bRe = mkBtn("↻ replay");
-    this.bAuto.onclick = () => { this.modeForced = null; this.syncBtns(); };
-    this.bG.onclick = () => { this.modeForced = 0; this.syncBtns(); };
-    this.bD.onclick = () => { this.modeForced = 1; this.syncBtns(); };
-    bRe.onclick = () => { this.t0 = -1; };
+    const hint = document.createElement("div"); hint.textContent = "↑ toolbar “mode” cycles Auto ⇄ GRPO ⇄ Dr. GRPO · click the policy or a rollout to open its note";
+    css(hint, { marginTop: "10px", fontSize: "10.5px", color: "#6f7aa6" });
 
     hud.appendChild(h1); hud.appendChild(this.hPhase); hud.appendChild(this.hFormula);
-    hud.appendChild(this.hDesc); hud.appendChild(this.hBadge); hud.appendChild(ctr);
+    hud.appendChild(this.hDesc); hud.appendChild(this.hBadge); hud.appendChild(hint);
     this.host.appendChild(hud); this.hud = hud;
-    this.syncBtns();
   }
 
-  private syncBtns() {
-    const on = (b: HTMLButtonElement, v: boolean) => {
-      b.style.background = v ? "rgba(77,255,158,0.22)" : "rgba(120,110,200,0.16)";
-      b.style.borderColor = v ? "rgba(77,255,158,0.5)" : "rgba(150,120,255,0.3)";
-    };
-    on(this.bAuto, this.modeForced === null); on(this.bG, this.modeForced === 0); on(this.bD, this.modeForced === 1);
-  }
+  // driven by the view's toolbar mode button
+  setMode(m: number | null) { this.modeForced = m; }
+  replay() { this.t0 = -1; }
 
   private phaseAt(localT: number) {
     let acc = 0;

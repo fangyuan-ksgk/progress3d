@@ -11,12 +11,6 @@ import { GrpoScene } from "./grpo-scene";
 
 export const VIEW_TYPE = "progress3d-map";
 
-// ── small math helpers for the custom GRPO renderer ──────────────────────────
-const _lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-const _clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
-const _easeIO = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
-const _cMix = (a: string, b: string, t: number) => new THREE.Color(a).lerp(new THREE.Color(b), _clamp(t, 0, 1));
-
 export class ResearchMapView extends ItemView {
   plugin: Progress3DPlugin;
   private host: HTMLElement;
@@ -51,9 +45,8 @@ export class ResearchMapView extends ItemView {
   private dragMoved = false;
   private dragPlane = new THREE.Plane();
   private linkSource: string | null = null;
+  // bespoke animated renderer for the `grpo` map (replaces the generic node-graph)
   private grpo: GrpoScene | null = null;
-  // custom animated renderer for the `grpo` map (replaces the generic node-graph)
-  private grpo: any = null;
   private grpoModeForced: number | null = null; // null = auto-toggle, 0 = GRPO, 1 = Dr.GRPO
   private grpoModeBtn: HTMLButtonElement | null = null;
 
@@ -352,11 +345,27 @@ export class ResearchMapView extends ItemView {
     void this.refreshMapList();
   }
 
+  // ── the bespoke grpo renderer ──────────────────────────────────────────────
+  private buildGrpo() {
+    this.grpo = new GrpoScene(this.root, this.host);
+    this.grpo.build(this.camera, this.controls);
+    this.grpo.setMode(this.grpoModeForced);
+    this.updateGrpoBtn();
+  }
+
+  private updateGrpoBtn() {
+    if (this.grpoModeBtn) {
+      const m = this.grpoModeForced;
+      this.grpoModeBtn.textContent = `mode: ${m === null ? "Auto ⇄" : m === 0 ? "GRPO" : "Dr. GRPO"}`;
+    }
+    this.grpo?.setMode(this.grpoModeForced);
+  }
+
   private disposeScene() {
     this.nodeMeshes = [];
     this.meshById.clear();
     this.selected = null;
-    this.grpo = null;
+    if (this.grpo) { this.grpo.dispose(); this.grpo = null; }
     this.pulses = null;
     this.path = [];
     this.pulseMeta = [];
@@ -436,6 +445,16 @@ export class ResearchMapView extends ItemView {
     this.downXY = null;
     if (moved > 5) return; // camera drag, not a click
     if (this.downButton !== 0) return; // only left-click selects / opens / connects
+    if (this.grpo) {
+      // grpo map: click the policy / a rollout / a bar to open its note
+      const r = this.renderer.domElement.getBoundingClientRect();
+      this.mouse.x = ((e.clientX - r.left) / r.width) * 2 - 1;
+      this.mouse.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+      this.ray.setFromCamera(this.mouse, this.camera);
+      const gid = this.grpo.pickId(this.ray);
+      if (gid) this.plugin.openNote(gid);
+      return;
+    }
     const hit = this.nodeAt(e);
     if (!hit) { this.linkSource = null; return; }
     const id = (hit as any).p3d.node.id as string;
@@ -521,6 +540,7 @@ export class ResearchMapView extends ItemView {
   }
 
   private frameAll() {
+    if (this.grpo) { this.grpo.frame(this.camera, this.controls); return; }
     const box = new THREE.Box3();
     this.nodeMeshes.forEach((m) => box.expandByPoint(m.position));
     const c = box.getCenter(new THREE.Vector3());
@@ -533,6 +553,7 @@ export class ResearchMapView extends ItemView {
     if (this.disposed) return; // a frame queued before onClose must not touch torn-down objects
     this.raf = requestAnimationFrame(this.animate);
     const t = this.clock.getElapsedTime();
+    if (this.grpo) { this.grpo.update(t); this.controls.update(); this.composer.render(); return; }
     for (const g of this.nodeMeshes) {
       const u = (g as any).p3d;
       const target = g === this.selected ? u.emi : 1.4;
