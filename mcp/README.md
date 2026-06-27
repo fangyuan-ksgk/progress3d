@@ -43,15 +43,36 @@ claude mcp add -s user progress3d \
 ```
 `-s user` = all your sessions. Drop `-s user` for just the current project. Verify: `claude mcp list`.
 
-## Many agents / cloud
+## Many agents / cloud — GitHub relay (built)
 MCP registration is **per host config, inherited by every agent on that host** — you do **not**
-re-register per spawned agent. Two cases:
-- **One persistent server holding the vault** → run `./mcp/install.sh` once (or bake it into the
-  machine image / startup). Every agent on that box gets the tools. The vault files must live there.
-- **Many ephemeral hosts sharing one central vault** → a per-host stdio server can't share one
-  vault. Run the MCP as a **remote HTTP service** next to the vault and point agents at it with
-  `claude mcp add -s user --transport http <name> <url>` baked into the image — install-once,
-  no per-agent, no per-host vault copy. (HTTP transport: ask; it's a small add to this server.)
+re-register per spawned agent. For **ephemeral cloud agents** that have no local vault, the server
+can write to a **GitHub repo over HTTPS** (Contents API) instead of local disk. Each write is one
+commit; your laptop doesn't need to be online; distinct notes never conflict.
+
+**On the cloud agent** (bake into the image / entrypoint — once per image, not per agent):
+```bash
+claude mcp add -s user progress3d \
+  -e PROGRESS3D_REPO="owner/vault-inbox" \
+  -e GITHUB_TOKEN="ghp_…"            \
+  -e PROGRESS3D_REPO_BRANCH="main"   \  # optional, default main
+  -e PROGRESS3D_REPO_DIR=""          \  # optional subfolder prefix in the repo
+  -- node /path/to/mcp/progress3d-mcp.mjs
+```
+With `PROGRESS3D_REPO` + a token set, the **vault file tools** (`list_vault`/`read_file`/
+`write_file`/`append_file`/`search_vault`) target the repo over HTTPS — no clone, no tunnel.
+The token needs `contents:write` on that repo (a fine-grained PAT scoped to the one repo is ideal).
+
+**Map tools stay local on purpose.** `graph.json` is one shared file; many writers = merge hell.
+Cloud agents add NOTES (unique paths like `inbox/<topic>-<agent>.md`); curate the map locally.
+
+**On your machine** — receive the notes by pulling the repo into your vault. Either:
+- Install the **Obsidian Git** community plugin and set auto-pull (e.g. every few minutes), or
+- a cron/launchd job: `git -C "$HOME/vault/TV" pull --rebase` (make the vault, or an `inbox/`
+  subfolder, a clone of the relay repo).
+
+### Alternative: one persistent host holding the vault
+Run `./mcp/install.sh` once on that box (or bake it into the image). Every agent there gets the
+local-disk tools and writes straight into the vault. No GitHub needed.
 
 ### Or project-scoped via `.mcp.json`
 ```json

@@ -52,6 +52,92 @@ function walk(dir, out = []) {
   return out;
 }
 
+// --- storage backend: local fs (default) OR a GitHub repo over HTTPS -----------------------
+// For EPHEMERAL cloud agents: set PROGRESS3D_REPO=owner/repo + GITHUB_TOKEN and the vault file
+// tools (list/read/write/append/search) write to that repo via the Contents API over HTTPS —
+// no git clone, no tunnel, durable even when your laptop is asleep. Each write is one commit;
+// your local vault receives them with a plain `git pull` (cron or the Obsidian-Git plugin).
+// Map tools (graph.json) stay local on purpose — one shared file + many writers = merge hell;
+// cloud agents should add NOTES (unique files), not do concurrent map surgery.
+const GH_REPO = process.env.PROGRESS3D_REPO || "";
+const GH_TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || "";
+const GH_BRANCH = process.env.PROGRESS3D_REPO_BRANCH || "main";
+const GH_PREFIX = (process.env.PROGRESS3D_REPO_DIR || "").replace(/^\/+|\/+$/g, "");
+const GH = !!(GH_REPO && GH_TOKEN);
+function ghRel(rel) {
+  if (String(rel).split(/[\\/]/).includes("..")) throw new Error("path escapes the repo");
+  return (GH_PREFIX ? GH_PREFIX + "/" : "") + String(rel).replace(/^\/+/, "");
+}
+async function ghApi(method, url, body) {
+  if (typeof fetch === "undefined") throw new Error("GitHub mode needs Node >= 18 (global fetch)");
+  return fetch(`https://api.github.com${url}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${GH_TOKEN}`, Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "progress3d-mcp",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
+async function ghRead(rel) {
+  const r = await ghApi("GET", `/repos/${GH_REPO}/contents/${encodeURI(ghRel(rel))}?ref=${GH_BRANCH}`);
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error(`GitHub ${r.status}: ${(await r.text()).slice(0, 140)}`);
+  const j = await r.json();
+  return { text: Buffer.from(j.content || "", "base64").toString("utf8"), sha: j.sha };
+}
+async function ghWrite(rel, text) {
+  const cur = await ghRead(rel).catch(() => null);
+  const r = await ghApi("PUT", `/repos/${GH_REPO}/contents/${encodeURI(ghRel(rel))}`, {
+    message: `progress3d: ${cur ? "update" : "add"} ${rel}`,
+    content: Buffer.from(text).toString("base64"), branch: GH_BRANCH, sha: cur?.sha,
+  });
+  if (!r.ok) throw new Error(`GitHub ${r.status}: ${(await r.text()).slice(0, 140)}`);
+}
+async function ghListMd() {
+  const r = await ghApi("GET", `/repos/${GH_REPO}/git/trees/${GH_BRANCH}?recursive=1`);
+  if (!r.ok) throw new Error(`GitHub ${r.status}: ${(await r.text()).slice(0, 140)}`);
+  const pre = GH_PREFIX ? GH_PREFIX + "/" : "";
+  return ((await r.json()).tree || [])
+    .filter((t) => t.type === "blob" && t.path.endsWith(".md") && t.path.startsWith(pre))
+    .map((t) => t.path.slice(pre.length));
+}
+
+// backend-agnostic ops used by the vault file tools
+async function storeRead(rel) {
+  if (GH) return (await ghRead(rel))?.text ?? null;
+  return fs.existsSync(safe(rel)) ? fs.readFileSync(safe(rel), "utf8") : null;
+}
+async function storeWrite(rel, text) {
+  if (GH) return ghWrite(rel, text);
+  const p = safe(rel); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, text);
+}
+async function storeAppend(rel, text) {
+  const cur = (await storeRead(rel)) || "";
+  return storeWrite(rel, cur + (cur && !cur.endsWith("\n") ? "\n" : "") + text);
+}
+async function storeList(dir, query) {
+  let files = GH ? await ghListMd() : walk(dir ? safe(dir) : VAULT_ABS);
+  if (GH && dir) { const d = String(dir).replace(/^\/+|\/+$/g, "") + "/"; files = files.filter((f) => f.startsWith(d)); }
+  if (query) { const q = String(query).toLowerCase(); files = files.filter((f) => f.toLowerCase().includes(q)); }
+  return files;
+}
+async function storeSearch(query, limit) {
+  const q = String(query).toLowerCase(); const hits = [];
+  const files = GH ? await ghListMd() : walk(VAULT_ABS);
+  let scanned = 0;
+  for (const rel of files) {
+    if (GH && scanned >= 150) { hits.push("(GitHub-mode search capped at 150 files)"); break; }
+    const text = await storeRead(rel); scanned++;
+    if (text == null) continue;
+    const lines = text.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].toLowerCase().includes(q)) { hits.push(`${rel}:${i + 1}: ${lines[i].trim().slice(0, 160)}`); if (hits.length >= limit) return hits; }
+    }
+  }
+  return hits;
+}
+
 const TOOLS = [
   { name: "get_graph", description: "Return the full scene-graph (graph.json): nodes + edges.", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
   { name: "list_nodes", description: "List every node in the map as id [type] label.", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
@@ -69,7 +155,7 @@ const TOOLS = [
   { name: "search_vault", description: "Full-text search across all notes; returns matching files with line numbers.", inputSchema: { type: "object", properties: { query: { type: "string" }, limit: { type: "number" } }, required: ["query"] } },
 ];
 
-function callTool(name, a = {}) {
+async function callTool(name, a = {}) {
   switch (name) {
     case "get_graph": return JSON.stringify(readGraph(), null, 2);
     case "list_nodes": {
@@ -114,40 +200,26 @@ function callTool(name, a = {}) {
       return `Deleted node "${a.id}" and its edges.`;
     }
     case "list_vault": {
-      let files = walk(a.dir ? safe(a.dir) : VAULT_ABS);
-      if (a.query) { const q = String(a.query).toLowerCase(); files = files.filter((f) => f.toLowerCase().includes(q)); }
+      const files = await storeList(a.dir, a.query);
       return files.slice(0, 500).map((f) => `- ${f}`).join("\n") || "(no markdown files)";
     }
     case "read_file": {
-      try { return fs.readFileSync(safe(a.path), "utf8"); } catch { return `(no file at "${a.path}")`; }
+      const t = await storeRead(a.path);
+      return t == null ? `(no file at "${a.path}")` : t;
     }
     case "write_file": {
       if (!a.path) throw new Error("path required");
-      const p = safe(a.path);
-      fs.mkdirSync(path.dirname(p), { recursive: true });
-      fs.writeFileSync(p, a.content || "");
-      return `Wrote ${a.path} (${(a.content || "").length} chars).`;
+      await storeWrite(a.path, a.content || "");
+      return `Wrote ${a.path} (${(a.content || "").length} chars)${GH ? ` → GitHub ${GH_REPO}` : ""}.`;
     }
     case "append_file": {
       if (!a.path) throw new Error("path required");
-      const p = safe(a.path);
-      fs.mkdirSync(path.dirname(p), { recursive: true });
-      const cur = fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "";
-      fs.writeFileSync(p, cur + (cur && !cur.endsWith("\n") ? "\n" : "") + (a.text || ""));
-      return `Appended to ${a.path}.`;
+      await storeAppend(a.path, a.text || "");
+      return `Appended to ${a.path}${GH ? ` → GitHub ${GH_REPO}` : ""}.`;
     }
     case "search_vault": {
-      const q = String(a.query || "").toLowerCase();
-      if (!q) throw new Error("query required");
-      const limit = a.limit || 50;
-      const hits = [];
-      for (const rel of walk(VAULT_ABS)) {
-        let lines; try { lines = fs.readFileSync(path.join(VAULT_ABS, rel), "utf8").split("\n"); } catch { continue; }
-        for (let i = 0; i < lines.length; i++) {
-          if (lines[i].toLowerCase().includes(q)) { hits.push(`${rel}:${i + 1}: ${lines[i].trim().slice(0, 160)}`); if (hits.length >= limit) break; }
-        }
-        if (hits.length >= limit) break;
-      }
+      if (!a.query) throw new Error("query required");
+      const hits = await storeSearch(a.query, a.limit || 50);
       return hits.join("\n") || `(no matches for "${a.query}")`;
     }
     default: throw new Error(`Unknown tool: ${name}`);
@@ -156,7 +228,7 @@ function callTool(name, a = {}) {
 
 const send = (msg) => process.stdout.write(JSON.stringify(msg) + "\n");
 const rl = readline.createInterface({ input: process.stdin });
-rl.on("line", (line) => {
+rl.on("line", async (line) => {
   line = line.trim();
   if (!line) return;
   let req;
@@ -168,7 +240,7 @@ rl.on("line", (line) => {
     send({ jsonrpc: "2.0", id, result: { tools: TOOLS } });
   } else if (method === "tools/call") {
     try {
-      const text = callTool(params.name, params.arguments || {});
+      const text = await callTool(params.name, params.arguments || {});
       send({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text }] } });
     } catch (e) {
       send({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: `Error: ${e.message}` }], isError: true } });
