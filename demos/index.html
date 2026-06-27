@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>3D Renderer · Approach Comparison</title>
+<style>
+  :root{ color-scheme:dark; }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  body{ min-height:100vh; background:radial-gradient(120% 100% at 50% 0%, #11162a 0%, #06080f 60%);
+    color:#e7ecff; font-family:-apple-system,"SF Pro Text",Inter,system-ui,sans-serif;
+    display:flex; flex-direction:column; align-items:center; padding:64px 24px; }
+  h1{ font-size:26px; font-weight:680; letter-spacing:.2px; }
+  .sub{ margin-top:10px; color:#93a2cc; font-size:14px; max-width:620px; text-align:center; line-height:1.6; }
+  .grid{ margin-top:44px; display:grid; gap:20px; grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+    max-width:980px; width:100%; }
+  a.card{ text-decoration:none; color:inherit; border-radius:18px; padding:22px;
+    background:rgba(18,23,40,.7); border:1px solid rgba(120,150,255,.14); transition:.18s; display:block; }
+  a.card:hover{ transform:translateY(-3px); border-color:rgba(120,150,255,.4); background:rgba(24,30,52,.85); }
+  .badge{ font-size:11px; padding:3px 10px; border-radius:999px; display:inline-block; font-weight:600; }
+  .b1{ background:rgba(80,120,255,.18); color:#aac2ff; }
+  .b2{ background:rgba(150,90,255,.2); color:#cdb6ff; }
+  .b3{ background:rgba(255,150,80,.18); color:#ffcb9a; }
+  .card h2{ margin-top:14px; font-size:17px; font-weight:640; }
+  .card p{ margin-top:8px; font-size:12.5px; line-height:1.55; color:#9fb0d8; }
+  .card .pro{ color:#7ee0b8; } .card .con{ color:#ff9aa8; }
+  .rec{ margin-left:8px; font-size:10px; color:#7ee0b8; border:1px solid rgba(126,224,184,.4);
+    padding:2px 7px; border-radius:999px; }
+  .foot{ margin-top:40px; font-size:12px; color:#6b7aa0; }
+</style>
+</head>
+<body>
+  <h1>3D Research Renderer — Rendering Approaches</h1>
+  <div class="sub">Same target — a Transformer architecture — rendered three ways. Open each, orbit/zoom, and pick which one your research map should be built on.</div>
+  <div class="grid">
+    <a class="card" href="1-scene-graph.html">
+      <span class="badge b1">Approach 1</span><span class="rec">recommended</span>
+      <h2>Structured Scene-Graph</h2>
+      <p>AI emits a JSON spec of typed nodes + edges; a renderer draws clean labeled primitives.</p>
+      <p><span class="pro">+ editable, diffable, notes anchor to node ids</span><br><span class="con">– bounded to your primitive vocabulary</span></p>
+    </a>
+    <a class="card" href="2-threejs-code.html">
+      <span class="badge b2">Approach 2</span>
+      <h2>Generated Three.js Code</h2>
+      <p>AI writes raw Three.js — live attention field, flowing pulses, bloom.</p>
+      <p><span class="pro">+ unlimited custom visuals & motion</span><br><span class="con">– hard to edit safely / anchor notes</span></p>
+    </a>
+    <a class="card" href="4-bbycroft-style.html">
+      <span class="badge b1">Approach 4</span><span class="rec">bbycroft-style</span>
+      <h2>Tensor Walkthrough (structure + flow)</h2>
+      <p>Every tensor is a grid of cells; a thread of light flows through the compute. Mimics bbycroft.net/llm.</p>
+      <p><span class="pro">+ structure of #1 with the motion of #2</span><br><span class="con">– denser to author</span></p>
+    </a>
+    <a class="card" href="3-text-to-3d.html">
+      <span class="badge b3">Approach 3</span>
+      <h2>Text-to-3D Meshes</h2>
+      <p>A text-to-3D model returns sculpted, displaced geometry per component.</p>
+      <p><span class="pro">+ rich organic hero visuals</span><br><span class="con">– blobs aren't diagrams; no stable parts</span></p>
+    </a>
+    <a class="card" href="5-notes.html">
+      <span class="badge b1">App</span><span class="rec">notes</span>
+      <h2>Nodes ↔ Obsidian Notes (docked)</h2>
+      <p>Click a node → its .md note docks beside the 3D view (resizable + fullscreen). Real vault via File System Access API, wiki-links, voice hook.</p>
+    </a>
+  </div>
+  <div class="foot">drag = orbit · scroll = zoom · these are throwaway demos to compare feel</div>
+</body>
+</html>

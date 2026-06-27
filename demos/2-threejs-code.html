@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Approach 2 · Generated Three.js Code · Transformer (detailed)</title>
+<style>
+  :root { color-scheme: dark; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { height:100%; overflow:hidden; background:#03040a;
+    font-family:-apple-system,"SF Pro Text",Inter,system-ui,sans-serif; }
+  #app { position:fixed; inset:0; }
+  .panel { position:fixed; z-index:10; backdrop-filter:blur(14px);
+    background:rgba(10,12,24,.6); border:1px solid rgba(150,120,255,.16);
+    border-radius:14px; color:#e7e3ff; }
+  #hud { top:18px; left:18px; padding:16px 18px; max-width:350px; }
+  #hud h1 { font-size:15px; font-weight:650; }
+  #hud .tag { display:inline-block; margin-top:8px; font-size:11px; padding:3px 9px;
+    border-radius:999px; background:rgba(150,90,255,.2); color:#cdb6ff; border:1px solid rgba(150,120,255,.28); }
+  #hud p { margin-top:10px; font-size:12px; line-height:1.55; color:#b3a8d8; }
+  #hud .pro{ color:#9be0c0;} #hud .con{ color:#ff9aa8;}
+  #legend { bottom:18px; left:18px; padding:12px 15px; font-size:11.5px; line-height:1.9; color:#c8c0e8; }
+  #legend .sw{ display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:7px; vertical-align:middle; }
+  #hint{ top:18px; right:18px; padding:9px 14px; font-size:11px; color:#9a90c0;}
+  @media (max-width:760px){ #legend{display:none;} }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="hud" class="panel">
+  <h1>Transformer Block · Exploded &amp; Live</h1>
+  <span class="tag">Approach 2 — Generated Three.js Code (detailed)</span>
+  <p>One full block, sub-modules <b>unfolded</b>: LayerNorm → <b>Q/K/V</b> → per-head <b>softmax(QKᵀ)</b> → ·V → proj → <b>+residual</b> → <b>FFN (↑ GELU ↓)</b> → +residual. Data pulses flow; attention weights re-soften every frame.</p>
+  <p><span class="pro">+ every internal op is visible & alive</span> · <span class="con">– still custom code, not an editable graph</span></p>
+</div>
+<div id="legend" class="panel">
+  <div><span class="sw" style="background:#66e0ff"></span>tokens / residual stream</div>
+  <div><span class="sw" style="background:#5b8cff"></span>Q &nbsp; <span class="sw" style="background:#b06bff;margin-left:8px"></span>K &nbsp; <span class="sw" style="background:#39d2a0;margin-left:8px"></span>V</div>
+  <div><span class="sw" style="background:#ffd27a"></span>attention weights (per head)</div>
+  <div><span class="sw" style="background:#ff9a5c"></span>FFN hidden (GELU)</div>
+</div>
+<div id="hint" class="panel">drag = orbit · scroll = zoom</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+const app=document.getElementById('app');
+const scene=new THREE.Scene();
+scene.background=new THREE.Color('#03040a');
+scene.fog=new THREE.FogExp2('#03040a',0.018);
+
+const camera=new THREE.PerspectiveCamera(50, innerWidth/innerHeight, 0.1, 300);
+camera.position.set(-2, 7, 24);
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight); renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.1;
+app.appendChild(renderer.domElement);
+
+const composer=new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene,camera));
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),0.85,0.55,0.16));
+
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true; controls.dampingFactor=0.07; controls.target.set(2,3,0);
+controls.minDistance=8; controls.maxDistance=60; controls.autoRotate=true; controls.autoRotateSpeed=0.35;
+
+scene.add(new THREE.HemisphereLight('#8a7bff','#05060d',0.5));
+const pt=new THREE.PointLight('#a07bff',26,80); pt.position.set(0,10,8); scene.add(pt);
+
+// ── helpers ───────────────────────────────────────────────────────────────
+const sphGeo=new THREE.IcosahedronGeometry(1,3);
+function node(color,x,y,z,r=0.22){
+  const m=new THREE.Mesh(sphGeo,new THREE.MeshStandardMaterial({
+    color, emissive:color, emissiveIntensity:1.3, roughness:0.3 }));
+  m.position.set(x,y,z); m.scale.setScalar(r); scene.add(m);
+  m.userData.base=r; return m;
+}
+function glowLine(p1,p2,color,opacity=0.35,bow=0){
+  let pts;
+  if(bow){ const mid=new THREE.Vector3().addVectors(p1,p2).multiplyScalar(0.5); mid.y+=bow;
+    pts=new THREE.QuadraticBezierCurve3(p1,mid,p2).getPoints(24); }
+  else pts=[p1,p2];
+  const g=new THREE.BufferGeometry().setFromPoints(pts);
+  const l=new THREE.Line(g,new THREE.LineBasicMaterial({color,transparent:true,opacity,
+    blending:THREE.AdditiveBlending,depthWrite:false}));
+  scene.add(l); return l;
+}
+function label(text,x,y,z,col='#b9b2e0',size=34){
+  const c=document.createElement('canvas'),g=c.getContext('2d');
+  g.font=`600 ${size}px Inter,sans-serif`; const w=g.measureText(text).width;
+  c.width=w+30; c.height=size+18; g.font=`600 ${size}px Inter,sans-serif`;
+  g.fillStyle=col; g.textBaseline='middle'; g.fillText(text,15,c.height/2);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),
+    transparent:true,depthWrite:false,depthTest:false}));
+  sp.scale.set(c.width/c.height*0.85,0.85,1); sp.position.set(x,y,z); sp.renderOrder=3; scene.add(sp);
+  return sp;
+}
+
+const T=6;                       // sequence length
+const ySpread=(i)=> (i-(T-1)/2)*0.95;   // token vertical layout
+const COL={ tok:'#66e0ff', ln:'#9fb8ff', q:'#5b8cff', k:'#b06bff', v:'#39d2a0',
+  out:'#5fe0c0', ffn:'#ff9a5c', res:'#3a4a7a' };
+
+// column of T nodes at x (returns mesh[])
+function column(x,color,z=0,r=0.22){ const a=[]; for(let i=0;i<T;i++) a.push(node(color,x,ySpread(i),z,r)); return a; }
+const center=(arr)=> { const v=new THREE.Vector3(); arr.forEach(m=>v.add(m.position)); return v.multiplyScalar(1/arr.length); };
+
+// ── build the block, left → right ─────────────────────────────────────────
+const X={ inp:-12, ln1:-9, qkv:-5.5, attn:-0.5, av:4, proj:7, res1:9, ln2:11, ffnUp:13.5, ffnDn:17, res2:19.5 };
+
+const inp = column(X.inp, COL.tok);          label('Input tokens', X.inp, ySpread(T-1)+1.1, 0, '#9fe8ff');
+const ln1 = column(X.ln1, COL.ln, 0, 0.18);  label('LayerNorm', X.ln1, ySpread(T-1)+1.0, 0, '#c4d2ff', 28);
+inp.forEach((m,i)=>glowLine(m.position,ln1[i].position,COL.tok,0.3));
+
+// Q / K / V — three projections, separated in Z
+const zQ=-4.2, zK=0, zV=4.2;
+const Q=column(X.qkv,COL.q,zQ), K=column(X.qkv,COL.k,zK), V=column(X.qkv,COL.v,zV);
+label('Q  = Wq·x', X.qkv, ySpread(T-1)+1.0, zQ, '#9fb8ff', 28);
+label('K  = Wk·x', X.qkv, ySpread(T-1)+1.0, zK, '#cdb0ff', 28);
+label('V  = Wv·x', X.qkv, ySpread(T-1)+1.0, zV, '#9af0d8', 28);
+// projection fans (LN → each of Q,K,V)
+[ [Q,COL.q],[K,COL.k],[V,COL.v] ].forEach(([col,c])=> ln1.forEach((m,i)=>glowLine(m.position,col[i].position,c,0.22)) );
+
+// Per-head attention score grids: H heads, each a T×T cell sheet (Y rows = query, Z cols = key)
+const H=3, headZ=[-5.0,0,5.0];
+const headHue=['#7aa2ff','#c08bff','#ffd27a'];
+const cellGeo=new THREE.BoxGeometry(0.34,0.34,0.06);
+const grids=[];   // per head: {cells:[[mesh]], logits:[[..]]}
+for(let h=0;h<H;h++){
+  const cells=[], logits=[];
+  for(let qi=0; qi<T; qi++){
+    cells[qi]=[]; logits[qi]=[];
+    for(let ki=0; ki<T; ki++){
+      const mat=new THREE.MeshStandardMaterial({color:'#ffd27a',emissive:'#ffd27a',
+        emissiveIntensity:0.2,roughness:0.4,transparent:true,opacity:0.85});
+      const cell=new THREE.Mesh(cellGeo,mat);
+      cell.position.set(X.attn, ySpread(qi)+0.0, headZ[h] + (ki-(T-1)/2)*0.42);
+      cell.rotation.y=Math.PI/2;     // face along X (the flow axis)
+      scene.add(cell); cells[qi][ki]=cell;
+      logits[qi][ki]=(qi*7+ki*13+h*5)%10/3;   // seed
+    }
+  }
+  grids.push({cells,logits});
+  label('head '+(h+1), X.attn, ySpread(T-1)+1.2, headZ[h], headHue[h], 26);
+}
+label('softmax( Q·Kᵀ / √d )', X.attn, ySpread(0)-1.6, 0, '#ffe0a0', 30);
+// suggestive fans: Q→grids and K→grids (a few, to avoid clutter)
+for(let h=0;h<H;h++){ const gc=new THREE.Vector3(X.attn,0,headZ[h]);
+  glowLine(center(Q),gc,COL.q,0.18); glowLine(center(K),gc,COL.k,0.18); }
+
+// Attention output = scores · V  (merge heads)
+const av=column(X.av,COL.out); label('Σ  weights · V', X.av, ySpread(T-1)+1.0, 0, '#9af0d8', 28);
+for(let h=0;h<H;h++) glowLine(new THREE.Vector3(X.attn,0,headZ[h]),center(av),headHue[h],0.16);
+glowLine(center(V),center(av),COL.v,0.18);
+
+// Output projection + residual add #1
+const proj=column(X.proj,COL.out,0,0.2); label('Proj  Wo', X.proj, ySpread(T-1)+1.0, 0, '#9af0d8', 26);
+av.forEach((m,i)=>glowLine(m.position,proj[i].position,COL.out,0.3));
+const res1=column(X.res1,COL.tok); label('⊕ residual', X.res1, ySpread(T-1)+1.0, 0, '#9fe8ff', 26);
+proj.forEach((m,i)=>glowLine(m.position,res1[i].position,COL.out,0.3));
+// the big skip from input over the top
+inp.forEach((m,i)=>glowLine(m.position,res1[i].position,COL.tok,0.16, 4.5+i*0.25));
+
+// LN2
+const ln2=column(X.ln2,COL.ln,0,0.18); label('LayerNorm', X.ln2, ySpread(T-1)+1.0, 0, '#c4d2ff', 26);
+res1.forEach((m,i)=>glowLine(m.position,ln2[i].position,COL.tok,0.28));
+
+// FFN: up-projection (4×) → GELU → down-projection
+const FW=4; // hidden width multiplier (shown as FW nodes per token)
+const ffnUp=[]; // [token][k]
+for(let i=0;i<T;i++){ ffnUp[i]=[];
+  for(let k=0;k<FW;k++){ const z=(k-(FW-1)/2)*0.7;
+    ffnUp[i].push(node(COL.ffn, X.ffnUp, ySpread(i)+0.0, z, 0.16)); }
+}
+label('FFN ↑ 4C  ·  GELU', X.ffnUp, ySpread(T-1)+1.2, 0, '#ffc08a', 26);
+ln2.forEach((m,i)=> ffnUp[i].forEach(n=>glowLine(m.position,n.position,COL.ffn,0.16)) );
+
+const ffnDn=column(X.ffnDn,COL.ffn,0,0.2); label('FFN ↓ proj', X.ffnDn, ySpread(T-1)+1.0, 0, '#ffc08a', 26);
+ffnUp.forEach((row,i)=> row.forEach(n=>glowLine(n.position,ffnDn[i].position,COL.ffn,0.16)) );
+
+// Residual add #2 → output
+const res2=column(X.res2,COL.tok); label('⊕ residual → out', X.res2, ySpread(T-1)+1.1, 0, '#9fe8ff', 28);
+ffnDn.forEach((m,i)=>glowLine(m.position,res2[i].position,COL.ffn,0.3));
+res1.forEach((m,i)=>glowLine(m.position,res2[i].position,COL.tok,0.16, 4.0+i*0.2));
+
+// block bracket
+label('×  N  blocks', X.res2+1.5, ySpread((T-1)/2), 0, '#7d7ac0', 30);
+
+// ── flowing pulses along the residual stream ──────────────────────────────
+const mainPath=[X.inp,X.ln1,X.qkv,X.av,X.proj,X.res1,X.ln2,X.ffnDn,X.res2];
+const pulseN=70, pos=new Float32Array(pulseN*3), seeds=[];
+for(let i=0;i<pulseN;i++){ const tok=i%T; seeds.push({tok, p:Math.random(), v:0.10+Math.random()*0.10}); }
+const pulseGeo=new THREE.BufferGeometry(); pulseGeo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+const pulses=new THREE.Points(pulseGeo,new THREE.PointsMaterial({color:'#eafaff',size:0.18,
+  transparent:true,opacity:0.95,blending:THREE.AdditiveBlending,depthWrite:false}));
+scene.add(pulses);
+function pulsePos(frac, tok, out){
+  const f=frac*(mainPath.length-1); const i=Math.min(mainPath.length-2,Math.floor(f)); const t=f-i;
+  out.x=mainPath[i]+(mainPath[i+1]-mainPath[i])*t; out.y=ySpread(tok); out.z=0; return out;
+}
+
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight); composer.setSize(innerWidth,innerHeight);
+});
+
+const allNodes=[...inp,...ln1,...Q,...K,...V,...av,...proj,...res1,...ln2,...ffnDn,...res2,...ffnUp.flat()];
+const clock=new THREE.Clock(); const tmp=new THREE.Vector3();
+function loop(){
+  requestAnimationFrame(loop);
+  const t=clock.getElapsedTime();
+  // node breathing
+  for(const m of allNodes){ const b=0.85+0.45*Math.sin(t*2.2+m.position.x*0.5+m.position.y);
+    m.material.emissiveIntensity=b; m.scale.setScalar(m.userData.base*(0.9+0.18*Math.sin(t*2.6+m.position.x))); }
+  // live softmax per head row
+  for(let h=0;h<H;h++){ const G=grids[h];
+    for(let qi=0; qi<T; qi++){
+      // drift logits, then softmax across keys
+      let mx=-1e9; const e=[];
+      for(let ki=0; ki<T; ki++){ const lg=G.logits[qi][ki]+Math.sin(t*0.7+qi*1.3+ki*0.9+h*2.0)*1.2; e.push(lg); if(lg>mx)mx=lg; }
+      let sum=0; for(let ki=0;ki<T;ki++){ e[ki]=Math.exp(e[ki]-mx); sum+=e[ki]; }
+      for(let ki=0;ki<T;ki++){ const w=e[ki]/sum; const cell=G.cells[qi][ki];
+        cell.material.emissiveIntensity=0.15+w*2.6; cell.material.opacity=0.4+w*0.6;
+        cell.scale.setScalar(0.7+w*0.9); }
+    }
+  }
+  // flow pulses
+  const arr=pulses.geometry.attributes.position.array;
+  for(let i=0;i<pulseN;i++){ const s=seeds[i]; s.p+=s.v*0.02; if(s.p>1)s.p-=1;
+    pulsePos(s.p,s.tok,tmp); arr[i*3]=tmp.x; arr[i*3+1]=tmp.y; arr[i*3+2]=tmp.z; }
+  pulses.geometry.attributes.position.needsUpdate=true;
+  controls.update(); composer.render();
+}
+loop();
+</script>
+</body>
+</html>

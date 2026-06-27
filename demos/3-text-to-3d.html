@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Approach 3 · Text-to-3D Meshes · Transformer</title>
+<style>
+  :root { color-scheme: dark; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { height:100%; overflow:hidden; background:#080604;
+    font-family:-apple-system,"SF Pro Text",Inter,system-ui,sans-serif; }
+  #app { position:fixed; inset:0; }
+  .panel { position:fixed; z-index:10; backdrop-filter:blur(14px);
+    background:rgba(22,16,12,.62); border:1px solid rgba(255,180,120,.16);
+    border-radius:14px; color:#ffe9d6; }
+  #hud{ top:18px; left:18px; padding:16px 18px; max-width:350px; }
+  #hud h1{ font-size:15px; font-weight:650; }
+  #hud .tag{ display:inline-block; margin-top:8px; font-size:11px; padding:3px 9px;
+    border-radius:999px; background:rgba(255,150,80,.18); color:#ffcb9a; border:1px solid rgba(255,180,120,.28); }
+  #hud p{ margin-top:10px; font-size:12px; line-height:1.55; color:#d8bda6; }
+  #hud .pro{ color:#bfe3a0;} #hud .con{ color:#ff9a86;}
+  #note{ bottom:18px; right:18px; width:300px; padding:14px 16px; font-size:11.5px; line-height:1.6; color:#d8bda6; }
+  #note b{ color:#ffe9d6; }
+  #hint{ bottom:18px; left:18px; padding:9px 14px; font-size:11px; color:#c0a890;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="hud" class="panel">
+  <h1>Transformer · Sculpted Forms</h1>
+  <span class="tag">Approach 3 — Text-to-3D Meshes</span>
+  <p>A text-to-3D model returns an actual <b>mesh per component</b> — organic, displaced surfaces. Beautiful, tactile geometry.</p>
+  <p><span class="pro">+ Rich, sculptural, great for organic concepts.</span><br>
+  <span class="con">– Blobs aren't diagrams: structure is vague, labels float, and you can't reliably anchor a note to "the FFN".</span></p>
+</div>
+<div id="note" class="panel">
+  <b>Why this is the weak fit here →</b> Each form is generated geometry with no semantic parts. The labels you see are pinned manually and drift; there's no stable node id for notes or voice-chat to attach to. Good for a hero visual, not for an editable research map.
+</div>
+<div id="hint" class="panel">drag to orbit · scroll to zoom · forms breathe via noise displacement</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const app = document.getElementById('app');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#080604');
+scene.fog = new THREE.FogExp2('#080604', 0.02);
+
+const camera = new THREE.PerspectiveCamera(48, innerWidth/innerHeight, 0.1, 200);
+camera.position.set(6, 5, 13);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setSize(innerWidth,innerHeight); renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.0;
+app.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping=true; controls.dampingFactor=0.07; controls.target.set(0,3,0);
+controls.minDistance=5; controls.maxDistance=36; controls.autoRotate=true; controls.autoRotateSpeed=0.5;
+
+scene.add(new THREE.HemisphereLight('#ffd9a8','#0a0604',0.6));
+const key=new THREE.DirectionalLight('#fff0d8',2.4); key.position.set(7,14,8);
+key.castShadow=true; key.shadow.mapSize.set(2048,2048);
+key.shadow.camera.left=-15;key.shadow.camera.right=15;key.shadow.camera.top=15;key.shadow.camera.bottom=-15;
+key.shadow.bias=-0.0004; scene.add(key);
+const fill=new THREE.DirectionalLight('#ff8a5c',0.8); fill.position.set(-8,3,-6); scene.add(fill);
+
+// ground
+const ground=new THREE.Mesh(new THREE.CircleGeometry(30,64),
+  new THREE.MeshStandardMaterial({color:'#120c08',roughness:1}));
+ground.rotation.x=-Math.PI/2; ground.position.y=-0.6; ground.receiveShadow=true; scene.add(ground);
+
+// 3-D value noise (cheap) for vertex displacement
+function hash(x,y,z){ const s=Math.sin(x*12.9898+y*78.233+z*37.719)*43758.5453; return s-Math.floor(s); }
+function noise(x,y,z){
+  const xi=Math.floor(x),yi=Math.floor(y),zi=Math.floor(z);
+  const xf=x-xi,yf=y-yi,zf=z-zi;
+  const u=xf*xf*(3-2*xf),v=yf*yf*(3-2*yf),w=zf*zf*(3-2*zf);
+  function L(a,b,t){return a+(b-a)*t;}
+  const c000=hash(xi,yi,zi),c100=hash(xi+1,yi,zi),c010=hash(xi,yi+1,zi),c110=hash(xi+1,yi+1,zi);
+  const c001=hash(xi,yi,zi+1),c101=hash(xi+1,yi,zi+1),c011=hash(xi,yi+1,zi+1),c111=hash(xi+1,yi+1,zi+1);
+  return L(L(L(c000,c100,u),L(c010,c110,u),v),L(L(c001,c101,u),L(c011,c111,u),v),w);
+}
+
+// a "generated mesh": an icosphere displaced by fbm noise
+function sculpt({color, radius=1, rough=0.5, amp=0.32, seed=0, metal=0.0}){
+  const geo=new THREE.IcosahedronGeometry(radius, 24);
+  const pos=geo.attributes.position; const base=[];
+  for(let i=0;i<pos.count;i++) base.push(new THREE.Vector3().fromBufferAttribute(pos,i));
+  const mat=new THREE.MeshStandardMaterial({color, roughness:rough, metalness:metal,
+    flatShading:false, emissive:new THREE.Color(color).multiplyScalar(0.12)});
+  const mesh=new THREE.Mesh(geo,mat); mesh.castShadow=mesh.receiveShadow=true;
+  mesh.userData={base,pos,geo,seed,amp,radius};
+  return mesh;
+}
+
+// the "components" the text-to-3D model returned — note: just blobs, no parts
+const COMPONENTS = [
+  { label:'token embeddings', color:'#f2a65c', y:0.4,  r:1.15, amp:0.26, rough:0.55 },
+  { label:'self-attention',   color:'#ff7e9d', y:2.4,  r:1.45, amp:0.42, rough:0.35, metal:0.2 },
+  { label:'feed-forward',     color:'#5cd2c0', y:4.4,  r:1.3,  amp:0.34, rough:0.45 },
+  { label:'layer norm',       color:'#9aa6ff', y:6.0,  r:0.95, amp:0.22, rough:0.6 },
+  { label:'output head',      color:'#d98cff', y:7.6,  r:1.1,  amp:0.3,  rough:0.4, metal:0.3 },
+];
+const blobs=[];
+COMPONENTS.forEach((c,i)=>{
+  const m=sculpt({color:c.color, radius:c.r, rough:c.rough, amp:c.amp, seed:i*3.7, metal:c.metal||0});
+  m.position.set(0,c.y,0); scene.add(m); blobs.push(m);
+  // a floating, drifting label that doesn't quite stick to any feature
+  const cv=document.createElement('canvas'),x=cv.getContext('2d');
+  x.font='600 38px Inter,sans-serif'; const w=x.measureText(c.label).width;
+  cv.width=w+44; cv.height=60; x.font='600 38px Inter,sans-serif';
+  x.fillStyle='rgba(255,233,214,.92)'; x.textBaseline='middle';
+  x.fillText(c.label,22,32);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),transparent:true,depthWrite:false}));
+  sp.scale.set(cv.width/cv.height*0.85,0.85,1); sp.position.set(c.r+1.4, c.y+0.3, 0);
+  sp.userData={ baseY:c.y+0.3, ph:i }; scene.add(sp); m.userData.label=sp;
+  // thin tether from label toward blob (visibly imprecise)
+  const ln=new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(c.r+1.4,c.y+0.3,0), new THREE.Vector3(c.r*0.6,c.y,0)]),
+    new THREE.LineBasicMaterial({color:'#6b5a48',transparent:true,opacity:0.5}));
+  scene.add(ln);
+});
+
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+
+const clock=new THREE.Clock();
+function loop(){
+  requestAnimationFrame(loop);
+  const t=clock.getElapsedTime();
+  for(const m of blobs){
+    const {base,pos,geo,seed,amp,radius}=m.userData;
+    for(let i=0;i<base.length;i++){
+      const b=base[i]; const nx=b.x*1.1+seed, ny=b.y*1.1+t*0.4, nz=b.z*1.1;
+      let n=noise(nx,ny,nz)*0.6+noise(nx*2.1,ny*2.1,nz*2.1)*0.3+noise(nx*4.3,ny*4.3,nz*4.3)*0.1;
+      const d=1+(n-0.5)*amp*2;
+      pos.setXYZ(i, b.x*d, b.y*d, b.z*d);
+    }
+    pos.needsUpdate=true; geo.computeVertexNormals();
+    m.rotation.y=t*0.15+seed;
+    if(m.userData.label){ const L=m.userData.label; L.position.y=L.userData.baseY+Math.sin(t*0.8+L.userData.ph)*0.12; }
+  }
+  controls.update(); renderer.render(scene,camera);
+}
+loop();
+</script>
+</body>
+</html>

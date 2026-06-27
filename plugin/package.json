@@ -1,0 +1,25 @@
+{
+  "name": "progress3d",
+  "version": "0.1.0",
+  "description": "3D research map plugin for Obsidian (Three.js).",
+  "main": "main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production && node test/smoke.cjs",
+    "test": "node test/smoke.cjs"
+  },
+  "keywords": ["obsidian", "three.js", "3d", "research"],
+  "author": "fangyuan",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "0.20.2",
+    "obsidian": "latest",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "three": "^0.160.0"
+  }
+}

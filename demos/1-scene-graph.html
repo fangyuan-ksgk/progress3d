@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Approach 1 · Structured Scene-Graph · Transformer</title>
+<style>
+  :root { color-scheme: dark; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #06080f;
+    font-family: -apple-system, "SF Pro Text", Inter, system-ui, sans-serif; }
+  #app { position: fixed; inset: 0; }
+  .panel {
+    position: fixed; z-index: 10; backdrop-filter: blur(14px);
+    background: rgba(14,18,30,.66); border: 1px solid rgba(120,150,255,.15);
+    border-radius: 14px; color: #dfe6ff;
+  }
+  #hud { top: 18px; left: 18px; padding: 16px 18px; max-width: 340px; }
+  #hud h1 { font-size: 15px; letter-spacing: .2px; font-weight: 650; }
+  #hud .tag { display:inline-block; margin-top:8px; font-size:11px; padding:3px 9px;
+    border-radius: 999px; background: rgba(80,120,255,.18); color:#aac2ff;
+    border:1px solid rgba(120,150,255,.25); }
+  #hud p { margin-top: 10px; font-size: 12px; line-height: 1.55; color:#9fb0d8; }
+  #hud .pro { color:#7ee0b8; } #hud .con { color:#ff9aa8; }
+  #spec { top: 18px; right: 18px; width: 330px; bottom: 18px; padding: 0; display:flex; flex-direction:column; }
+  #spec .head { padding: 12px 16px; font-size:12px; color:#9fb0d8; border-bottom:1px solid rgba(120,150,255,.12);
+    display:flex; justify-content:space-between; align-items:center; }
+  #spec .head b { color:#dfe6ff; font-weight:600; }
+  #spec pre { flex:1; overflow:auto; padding: 12px 16px; font-family: "SF Mono", ui-monospace, Menlo, monospace;
+    font-size: 11px; line-height: 1.5; color:#bcd0ff; }
+  #spec .k { color:#7aa2ff; } #spec .s { color:#7ee0b8; } #spec .n { color:#ffc46b; }
+  #hint { bottom: 18px; left: 18px; padding: 9px 14px; font-size: 11px; color:#8fa0c8; }
+  @media (max-width: 820px){ #spec{ display:none; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="hud" class="panel">
+  <h1>Transformer · Encoder–Decoder</h1>
+  <span class="tag">Approach 1 — Structured Scene-Graph</span>
+  <p>The AI emits a <b>JSON spec</b> of typed nodes (position, size, label, color) and edges. A renderer turns the spec into 3D primitives.</p>
+  <p><span class="pro">+ Editable &amp; diffable</span> · notes anchor to node IDs · clean for diagrams.<br>
+  <span class="con">– Bounded to the primitive vocabulary you define.</span></p>
+</div>
+<div id="spec" class="panel">
+  <div class="head"><span>scene.json <b>(the AI's output)</b></span><span id="cnt"></span></div>
+  <pre id="specpre"></pre>
+</div>
+<div id="hint" class="panel">drag to orbit · scroll to zoom · hover a node to highlight</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+// ──────────────────────────────────────────────────────────────────────────
+// THE SCENE-GRAPH SPEC  — this is exactly what an AI assistant would generate.
+// Each node has a stable id (notes & voice-chat anchor to these), a type that
+// picks a colour, a 3D position, a size, and a label.
+// ──────────────────────────────────────────────────────────────────────────
+const PALETTE = {
+  embed:  { c:'#f2b45c', e:'#ffd9a0' },   // embeddings
+  attn:   { c:'#6f8cff', e:'#b9c6ff' },   // attention
+  norm:   { c:'#8893b8', e:'#c4ccea' },   // add & norm
+  ffn:    { c:'#39d2a0', e:'#9bf2d8' },   // feed-forward
+  head:   { c:'#e06f9c', e:'#ffb6cf' },   // output head
+  io:     { c:'#c9d3ff', e:'#ffffff' },   // tokens in/out
+};
+const W = 3.0, D = 1.0;                    // common block footprint
+const EX = -3.4, DX = 3.4;                 // encoder / decoder columns
+const step = 1.7;                          // vertical spacing
+const enc = (i)=> -2 + i*step;
+const dec = (i)=> -2 + i*step;
+
+const SCENE = {
+  title: "transformer-base",
+  nodes: [
+    // ── Encoder column ──────────────────────────────
+    { id:"enc.tokens",  type:"io",    pos:[EX, enc(0)-1.0, 0], size:[2.2,0.5,D], label:"Inputs" },
+    { id:"enc.embed",   type:"embed", pos:[EX, enc(0), 0], label:"Input Embedding" },
+    { id:"enc.pos",     type:"embed", pos:[EX, enc(0.55), 0], size:[2.2,0.4,D], label:"+ Positional Encoding", thin:true },
+    { id:"enc.attn",    type:"attn",  pos:[EX, enc(1.3), 0], label:"Multi-Head Attention", heads:8 },
+    { id:"enc.norm1",   type:"norm",  pos:[EX, enc(2.0), 0], size:[3.0,0.4,D], label:"Add & Norm", thin:true },
+    { id:"enc.ffn",     type:"ffn",   pos:[EX, enc(2.7), 0], label:"Feed Forward" },
+    { id:"enc.norm2",   type:"norm",  pos:[EX, enc(3.4), 0], size:[3.0,0.4,D], label:"Add & Norm", thin:true },
+    // ── Decoder column ──────────────────────────────
+    { id:"dec.tokens",  type:"io",    pos:[DX, dec(0)-1.0, 0], size:[2.2,0.5,D], label:"Outputs (shifted right)" },
+    { id:"dec.embed",   type:"embed", pos:[DX, dec(0), 0], label:"Output Embedding" },
+    { id:"dec.pos",     type:"embed", pos:[DX, dec(0.55), 0], size:[2.2,0.4,D], label:"+ Positional Encoding", thin:true },
+    { id:"dec.mattn",   type:"attn",  pos:[DX, dec(1.3), 0], label:"Masked Multi-Head Attn", heads:8 },
+    { id:"dec.norm1",   type:"norm",  pos:[DX, dec(2.0), 0], size:[3.0,0.4,D], label:"Add & Norm", thin:true },
+    { id:"dec.xattn",   type:"attn",  pos:[DX, dec(2.7), 0], label:"Cross Attention", heads:8 },
+    { id:"dec.norm2",   type:"norm",  pos:[DX, dec(3.4), 0], size:[3.0,0.4,D], label:"Add & Norm", thin:true },
+    { id:"dec.ffn",     type:"ffn",   pos:[DX, dec(4.1), 0], label:"Feed Forward" },
+    { id:"dec.norm3",   type:"norm",  pos:[DX, dec(4.8), 0], size:[3.0,0.4,D], label:"Add & Norm", thin:true },
+    { id:"dec.linear",  type:"head",  pos:[DX, dec(5.6), 0], size:[2.4,0.5,D], label:"Linear" },
+    { id:"dec.softmax", type:"head",  pos:[DX, dec(6.2), 0], size:[2.4,0.5,D], label:"Softmax", thin:true },
+    { id:"dec.out",     type:"io",    pos:[DX, dec(7.0), 0], size:[2.6,0.5,D], label:"Output Probabilities" },
+  ],
+  edges: [
+    ["enc.tokens","enc.embed"],["enc.embed","enc.pos"],["enc.pos","enc.attn"],
+    ["enc.attn","enc.norm1"],["enc.norm1","enc.ffn"],["enc.ffn","enc.norm2"],
+    ["dec.tokens","dec.embed"],["dec.embed","dec.pos"],["dec.pos","dec.mattn"],
+    ["dec.mattn","dec.norm1"],["dec.norm1","dec.xattn"],["dec.xattn","dec.norm2"],
+    ["dec.norm2","dec.ffn"],["dec.ffn","dec.norm3"],["dec.norm3","dec.linear"],
+    ["dec.linear","dec.softmax"],["dec.softmax","dec.out"],
+    ["enc.norm2","dec.xattn", "cross"],   // encoder memory → cross attention
+  ],
+  groups: [
+    { label:"N×", around:["enc.attn","enc.norm2"], x:EX },
+    { label:"N×", around:["dec.mattn","dec.norm3"], x:DX },
+  ]
+};
+
+// ── Renderer (turns SPEC → 3D) ────────────────────────────────────────────
+const app = document.getElementById('app');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#06080f');
+scene.fog = new THREE.FogExp2('#06080f', 0.018);
+
+const camera = new THREE.PerspectiveCamera(46, innerWidth/innerHeight, 0.1, 200);
+camera.position.set(7.5, 6.5, 15);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+app.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.dampingFactor = 0.07;
+controls.target.set(0, 3.2, 0); controls.maxDistance = 40; controls.minDistance = 4;
+
+// lighting
+scene.add(new THREE.HemisphereLight('#9fb4ff', '#0a0d18', 0.65));
+const key = new THREE.DirectionalLight('#ffffff', 2.0);
+key.position.set(8, 16, 10); key.castShadow = true;
+key.shadow.mapSize.set(2048,2048); key.shadow.camera.near=1; key.shadow.camera.far=60;
+key.shadow.camera.left=-20; key.shadow.camera.right=20; key.shadow.camera.top=20; key.shadow.camera.bottom=-20;
+key.shadow.bias = -0.0004; scene.add(key);
+const rim = new THREE.DirectionalLight('#6f8cff', 0.8); rim.position.set(-10,4,-8); scene.add(rim);
+
+// ground
+const ground = new THREE.Mesh(
+  new THREE.CircleGeometry(40, 64),
+  new THREE.MeshStandardMaterial({ color:'#0b0f1c', roughness:1, metalness:0 }));
+ground.rotation.x = -Math.PI/2; ground.position.y = -3.6; ground.receiveShadow = true; scene.add(ground);
+const grid = new THREE.GridHelper(60, 60, '#1a2240', '#141a2c');
+grid.position.y = -3.59; grid.material.transparent = true; grid.material.opacity = 0.35; scene.add(grid);
+
+// label sprites via canvas
+function makeLabel(text, { size=42, color='#0a0d18', weight=600 }={}){
+  const c = document.createElement('canvas'), x = c.getContext('2d');
+  const pad = 24, font = `${weight} ${size}px -apple-system, Inter, sans-serif`;
+  x.font = font; const w = x.measureText(text).width;
+  c.width = w + pad*2; c.height = size + pad;
+  x.font = font; x.textBaseline = 'middle'; x.fillStyle = color;
+  x.fillText(text, pad, c.height/2);
+  const tex = new THREE.CanvasTexture(c); tex.anisotropy = 8;
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map:tex, transparent:true, depthWrite:false }));
+  spr.scale.set(c.width/c.height*0.5, 0.5, 1); spr.userData.aspect = c.width/c.height; return spr;
+}
+
+const nodeMap = new Map();
+const root = new THREE.Group(); scene.add(root);
+
+for (const n of SCENE.nodes){
+  const pal = PALETTE[n.type];
+  const sz = n.size || [W, n.thin?0.45:0.95, D];
+  const geo = new RoundedBoxGeometry(sz[0], sz[1], sz[2], 5, Math.min(0.18, sz[1]*0.35));
+  const mat = new THREE.MeshStandardMaterial({
+    color: pal.c, roughness: 0.35, metalness: 0.1,
+    emissive: pal.c, emissiveIntensity: 0.12 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(...n.pos); mesh.castShadow = mesh.receiveShadow = true;
+  mesh.userData = { id:n.id, base:pal.c, emat:mat };
+  root.add(mesh); nodeMap.set(n.id, mesh);
+
+  // label on front face
+  const label = makeLabel(n.label, { size: n.thin?34:40 });
+  label.scale.multiplyScalar(n.thin?0.92:1.0);
+  label.position.set(n.pos[0], n.pos[1], n.pos[2] + sz[2]/2 + 0.08);
+  root.add(label);
+
+  // multi-head pips for attention blocks
+  if (n.heads){
+    const hw = sz[0]/(n.heads+1);
+    for (let h=0; h<n.heads; h++){
+      const pip = new THREE.Mesh(
+        new THREE.SphereGeometry(0.07, 16, 16),
+        new THREE.MeshStandardMaterial({ color: pal.e, emissive: pal.e, emissiveIntensity:0.6, roughness:0.3 }));
+      pip.position.set(n.pos[0] - sz[0]/2 + hw*(h+1), n.pos[1] - sz[1]/2 - 0.14, n.pos[2]+sz[2]/2);
+      root.add(pip);
+    }
+  }
+}
+
+// edges: vertical flow + curved cross-attention
+function tube(a, b, color, curved=false){
+  const pa = nodeMap.get(a).position, pb = nodeMap.get(b).position;
+  let curve;
+  if (curved){
+    const mid = new THREE.Vector3((pa.x+pb.x)/2, (pa.y+pb.y)/2+0.4, pa.z - 2.6);
+    curve = new THREE.QuadraticBezierCurve3(pa.clone(), mid, pb.clone());
+  } else {
+    curve = new THREE.LineCurve3(pa.clone(), pb.clone());
+  }
+  const g = new THREE.TubeGeometry(curve, curved?40:8, 0.035, 10, false);
+  const m = new THREE.MeshStandardMaterial({ color, emissive:color, emissiveIntensity:0.5,
+    roughness:0.4, transparent:true, opacity: curved?0.9:0.7 });
+  const mesh = new THREE.Mesh(g, m); root.add(mesh);
+  // arrow cone
+  const dir = new THREE.Vector3().subVectors(pb, curved? curve.getPoint(0.85): pa).normalize();
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.28, 14),
+    new THREE.MeshStandardMaterial({ color, emissive:color, emissiveIntensity:0.5 }));
+  cone.position.copy(pb).addScaledVector(dir, -0.32);
+  cone.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
+  root.add(cone);
+}
+for (const e of SCENE.edges){
+  const cross = e[2]==='cross';
+  tube(e[0], e[1], cross? '#e06f9c' : '#5b6a99', cross);
+}
+
+// N× group brackets
+for (const g of SCENE.groups){
+  const ys = g.around.map(id=>nodeMap.get(id).position.y);
+  const y0 = Math.min(...ys)-0.6, y1 = Math.max(...ys)+0.6;
+  const bx = g.x + (g.x<0? -2.4 : 2.4);
+  const pts = [ new THREE.Vector3(bx+ (g.x<0?0.3:-0.3), y0, 0),
+               new THREE.Vector3(bx, y0, 0), new THREE.Vector3(bx, y1, 0),
+               new THREE.Vector3(bx+ (g.x<0?0.3:-0.3), y1, 0) ];
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color:'#5b6a99', transparent:true, opacity:0.7 }));
+  root.add(line);
+  const lab = makeLabel(g.label, { size:46, color:'#aac2ff' });
+  lab.position.set(bx + (g.x<0?-0.5:0.5), (y0+y1)/2, 0); root.add(lab);
+}
+
+// column captions
+for (const [txt,x] of [["ENCODER",EX],["DECODER",DX]]){
+  const cap = makeLabel(txt, { size:48, color:'#6f7fb0', weight:700 });
+  cap.scale.multiplyScalar(1.1); cap.position.set(x, -3.0, 0); root.add(cap);
+}
+
+// hover highlight via raycaster
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2(); let hovered=null;
+addEventListener('pointermove', (ev)=>{
+  mouse.x = (ev.clientX/innerWidth)*2-1; mouse.y = -(ev.clientY/innerHeight)*2+1;
+});
+function updateHover(){
+  ray.setFromCamera(mouse, camera);
+  const hits = ray.intersectObjects([...nodeMap.values()], false);
+  const top = hits[0]?.object || null;
+  if (hovered && hovered!==top){ hovered.userData.emat.emissiveIntensity = 0.12; hovered.scale.setScalar(1); }
+  if (top){ top.userData.emat.emissiveIntensity = 0.5; top.scale.setScalar(1.04);
+    highlight(top.userData.id); }
+  else highlight(null);
+  hovered = top;
+}
+
+// pretty-print the spec into the side panel, with click-to-highlight
+const specEl = document.getElementById('specpre');
+document.getElementById('cnt').textContent = `${SCENE.nodes.length} nodes · ${SCENE.edges.length} edges`;
+function syntax(json){
+  return json
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/"(id|type|label|pos|size|heads)":/g,'<span class="k">"$1"</span>:')
+    .replace(/: "([^"]*)"/g,': <span class="s">"$1"</span>')
+    .replace(/: (-?\d+\.?\d*)/g,': <span class="n">$1</span>');
+}
+const compact = SCENE.nodes.map(n=>{
+  const s = n.size?`, "size":[${n.size}]`:''; const h=n.heads?`, "heads":${n.heads}`:'';
+  return `  { "id":"${n.id}", "type":"${n.type}", "pos":[${n.pos.map(v=>+v.toFixed(2))}]${s}${h}, "label":"${n.label}" }`;
+}).join(',\n');
+specEl.innerHTML = syntax(`{\n "nodes": [\n${compact}\n ]\n}`);
+
+let activeId=null;
+function highlight(id){
+  if (id===activeId) return; activeId=id;
+}
+
+addEventListener('resize', ()=>{
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// gentle intro orbit
+let t0 = 0;
+function loop(t){
+  requestAnimationFrame(loop);
+  if (!t0) t0 = t;
+  const e = Math.min((t-t0)/2500, 1);
+  if (e < 1){ const a = (1-e); camera.position.x = 7.5 + Math.sin(a*2)*4*a; }
+  controls.update(); updateHover();
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

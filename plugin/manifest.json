@@ -1,0 +1,9 @@
+{
+  "id": "progress3d",
+  "name": "Progress3D Research Map",
+  "version": "0.1.0",
+  "minAppVersion": "1.4.0",
+  "description": "A 3D interactive map of your research (model architectures & algorithms). Click a node to open its note in a native Obsidian pane. Notes, LaTeX, images, backlinks, and voice all live in your vault.",
+  "author": "fangyuan",
+  "isDesktopOnly": true
+}

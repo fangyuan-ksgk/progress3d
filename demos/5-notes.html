@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>5 · Nodes ↔ Obsidian Notes (docked) · Three.js</title>
+<style>
+  :root{ color-scheme:dark; --noteW:440px; }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ height:100%; overflow:hidden; background:#03040a;
+    font-family:-apple-system,"SF Pro Text",Inter,system-ui,sans-serif; }
+
+  /* ── docked split layout ── */
+  #layout{ position:fixed; inset:0; display:flex; }
+  #notePane{ width:min(var(--noteW), 46vw); flex:0 0 auto; background:#0a0e1a;
+    border-right:1px solid rgba(120,150,255,.16); display:flex; flex-direction:column;
+    transition:width .26s cubic-bezier(.2,.8,.2,1); min-width:0; }
+  #notePane.collapsed{ width:0; border-right:0; }
+  #notePane.full{ position:fixed; inset:0; width:100% !important; z-index:40; border-right:0; }
+  #divider{ flex:0 0 6px; cursor:col-resize; background:rgba(120,150,255,.06);
+    border-right:1px solid rgba(120,150,255,.1); }
+  #divider:hover{ background:rgba(120,150,255,.2); }
+  #notePane.collapsed + #divider, #notePane.full ~ #divider{ display:none; }
+  #viewPane{ flex:1 1 auto; position:relative; min-width:0; }
+  #app{ position:absolute; inset:0; }
+
+  /* ── note pane chrome ── */
+  .nHead{ padding:12px 14px 10px; border-bottom:1px solid rgba(120,150,255,.12); }
+  .nHead .row{ display:flex; align-items:center; gap:8px; }
+  .nHead .id{ font-family:"SF Mono",ui-monospace,Menlo,monospace; font-size:11px; color:#7aa2ff; }
+  .nHead h2{ font-size:16px; font-weight:640; margin-top:3px; color:#e7ecff; }
+  .nHead .file{ font-size:10.5px; color:#6b7aa0; margin-top:4px; font-family:"SF Mono",ui-monospace,monospace; }
+  .nHead .grow{ flex:1; }
+  .icon{ font:inherit; font-size:13px; line-height:1; color:#cdd8ff; background:rgba(120,150,255,.1);
+    border:1px solid rgba(120,150,255,.24); border-radius:8px; padding:6px 9px; cursor:pointer; transition:.15s; }
+  .icon:hover{ background:rgba(120,150,255,.26); }
+  .vaultRow{ display:flex; align-items:center; gap:8px; padding:8px 14px;
+    border-bottom:1px solid rgba(120,150,255,.1); font-size:11px; color:#8fa0c8; }
+  .vaultRow b{ color:#7ee0b8; } #vaultStatus{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  .tools{ display:flex; gap:6px; padding:9px 14px; border-bottom:1px solid rgba(120,150,255,.1); align-items:center; }
+  .tools button{ font:inherit; font-size:11px; color:#cdd8ff; background:rgba(120,150,255,.1);
+    border:1px solid rgba(120,150,255,.22); border-radius:8px; padding:5px 10px; cursor:pointer; transition:.15s; }
+  .tools button:hover{ background:rgba(120,150,255,.26); }
+  .tools button.active{ background:rgba(120,150,255,.34); color:#fff; }
+  .tools .grow{ flex:1; }
+  .tools .voice{ background:rgba(255,90,140,.14); border-color:rgba(255,120,160,.3); color:#ffb4cc; }
+  .tools .save{ background:rgba(80,220,160,.14); border-color:rgba(80,220,160,.3); color:#9bf0c8; }
+
+  .nBody{ flex:1; overflow:auto; min-height:0; }
+  #editor{ width:100%; height:100%; resize:none; border:0; outline:0; background:transparent;
+    color:#dfe6ff; padding:16px 18px; font-family:"SF Mono",ui-monospace,Menlo,monospace; font-size:13px; line-height:1.65; }
+  #preview{ padding:18px 22px; font-size:14px; line-height:1.7; color:#d4ddf5; max-width:760px; }
+  #notePane.full #preview{ margin:0 auto; }
+  #preview h1{ font-size:22px; margin:.2em 0 .5em; } #preview h2{ font-size:17px; margin:1em 0 .4em; color:#bcd0ff; }
+  #preview h3{ font-size:15px; margin:1em 0 .3em; color:#a8bcf0; }
+  #preview p{ margin:.55em 0; } #preview ul,#preview ol{ margin:.5em 0 .5em 1.3em; }
+  #preview code{ background:rgba(120,150,255,.12); padding:1px 5px; border-radius:5px; font-size:12.5px; }
+  #preview pre{ background:rgba(8,11,22,.8); padding:11px 13px; border-radius:8px; overflow:auto; margin:.6em 0; }
+  #preview pre code{ background:none; padding:0; }
+  #preview a{ color:#7aa2ff; text-decoration:none; } #preview a:hover{ text-decoration:underline; }
+  #preview a.wiki{ color:#c08bff; background:rgba(180,120,255,.1); padding:1px 6px; border-radius:5px; }
+  #preview blockquote{ border-left:3px solid rgba(120,150,255,.4); padding-left:12px; color:#9fb0d8; }
+  #preview hr{ border:0; border-top:1px solid rgba(120,150,255,.16); margin:1em 0; }
+  #dirty{ color:#ffcf7a; }
+  .empty{ padding:24px; color:#6b7aa0; font-size:13px; line-height:1.7; }
+
+  /* floating affordances over the 3D view */
+  .float{ position:absolute; z-index:12; backdrop-filter:blur(12px);
+    background:rgba(10,12,24,.6); border:1px solid rgba(120,150,255,.16); border-radius:11px; color:#dfe6ff; }
+  #reopen{ top:16px; left:16px; padding:8px 12px; font:inherit; font-size:12px; cursor:pointer; display:none; }
+  #hint{ bottom:16px; right:16px; padding:8px 13px; font-size:11px; color:#8fa0c8; }
+  #toast{ position:fixed; bottom:18px; left:50%; transform:translateX(-50%) translateY(20px);
+    z-index:50; padding:10px 16px; font-size:12.5px; border-radius:11px; backdrop-filter:blur(12px);
+    background:rgba(10,12,24,.78); border:1px solid rgba(120,150,255,.2); color:#dfe6ff;
+    opacity:0; pointer-events:none; transition:.25s; }
+  #toast.show{ opacity:1; transform:translateX(-50%); }
+</style>
+</head>
+<body>
+<div id="layout">
+  <!-- ── Obsidian note pane, docked ── -->
+  <aside id="notePane">
+    <div class="vaultRow">
+      <button class="icon" id="openVault" style="font-size:11px">📂 Open Vault</button>
+      <span id="vaultStatus">no vault — <b style="color:#ffcf7a">localStorage</b></span>
+    </div>
+    <div class="nHead">
+      <div class="row">
+        <div style="min-width:0">
+          <div class="id" id="nId">—</div>
+          <h2 id="nTitle">Select a node</h2>
+        </div>
+        <div class="grow"></div>
+        <button class="icon" id="btnFull" title="Fullscreen">⤢</button>
+        <button class="icon" id="btnCollapse" title="Dock away">⟨</button>
+      </div>
+      <div class="file" id="nFile"></div>
+    </div>
+    <div class="tools">
+      <button id="tabEdit" class="active">Edit</button>
+      <button id="tabPrev">Preview</button>
+      <span class="grow"></span>
+      <button class="voice" id="btnVoice">🎙 Voice</button>
+      <button class="save" id="btnSave">Save <span id="dirty"></span></button>
+    </div>
+    <div class="nBody">
+      <textarea id="editor" spellcheck="false" placeholder="# Notes…"></textarea>
+      <div id="preview" style="display:none"></div>
+    </div>
+  </aside>
+
+  <div id="divider"></div>
+
+  <!-- ── 3D view ── -->
+  <main id="viewPane">
+    <div id="app"></div>
+    <button id="reopen" class="float">📝 Notes</button>
+    <div id="hint" class="float">click a node → its note docks here · drag = orbit · scroll = zoom</div>
+  </main>
+</div>
+<div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+// ── scene-graph (every node id → its .md note) ─────────────────────────────
+const TYPE_COLOR={ io:'#66e0ff', norm:'#9fb8ff', attn:'#5b8cff', qkv:'#b06bff',
+  val:'#39d2a0', ffn:'#ff9a5c', res:'#5fe0c0' };
+const NODES=[
+  { id:'input', label:'Input Tokens',    type:'io',   pos:[-17, 0, 0] },
+  { id:'ln1',   label:'LayerNorm 1',      type:'norm', pos:[-12.5, 0, 0] },
+  { id:'q',     label:'Q proj',           type:'qkv',  pos:[-8, 2.8,-3.4] },
+  { id:'k',     label:'K proj',           type:'qkv',  pos:[-8, 0, 0] },
+  { id:'v',     label:'V proj',           type:'val',  pos:[-8,-2.8, 3.4] },
+  { id:'attn',  label:'Multi-Head Attn',  type:'attn', pos:[-3, 0, 0] },
+  { id:'proj',  label:'Out Proj',         type:'attn', pos:[ 1.5, 0, 0] },
+  { id:'res1',  label:'Residual ⊕ 1',     type:'res',  pos:[ 5.5, 0, 0] },
+  { id:'ln2',   label:'LayerNorm 2',      type:'norm', pos:[ 9.5, 0, 0] },
+  { id:'ffn',   label:'FFN ↑GELU↓',       type:'ffn',  pos:[ 14, 0, 0] },
+  { id:'res2',  label:'Residual ⊕ 2',     type:'res',  pos:[ 18.5, 0, 0] },
+];
+const EDGES=[
+  ['input','ln1'],['ln1','q'],['ln1','k'],['ln1','v'],
+  ['q','attn'],['k','attn'],['v','attn'],['attn','proj'],['proj','res1'],
+  ['input','res1'],['res1','ln2'],['ln2','ffn'],['ffn','res2'],['res1','res2'],
+];
+
+// ── three.js, sized to #viewPane (not the window) ──────────────────────────
+const app=document.getElementById('app'), viewPane=document.getElementById('viewPane');
+const scene=new THREE.Scene();
+scene.background=new THREE.Color('#03040a'); scene.fog=new THREE.FogExp2('#03040a',0.02);
+const camera=new THREE.PerspectiveCamera(50, 1, 0.1, 300);
+camera.position.set(0, 9, 32);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.1;
+app.appendChild(renderer.domElement);
+const composer=new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene,camera));
+const bloom=new UnrealBloomPass(new THREE.Vector2(1,1),0.7,0.55,0.18); composer.addPass(bloom);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true; controls.dampingFactor=0.07; controls.target.set(1,0,0);
+controls.minDistance=6; controls.maxDistance=70;
+scene.add(new THREE.HemisphereLight('#8fb4ff','#05060d',0.5));
+const pl=new THREE.PointLight('#88aaff',26,90); pl.position.set(0,10,8); scene.add(pl);
+
+function fit(){ const w=Math.max(1,viewPane.clientWidth), h=Math.max(1,viewPane.clientHeight);
+  camera.aspect=w/h; camera.updateProjectionMatrix();
+  renderer.setSize(w,h); composer.setSize(w,h); }
+new ResizeObserver(fit).observe(viewPane); addEventListener('resize',fit); fit();
+
+function label(text,x,y,z,col='#cdd8ff',size=30){
+  const c=document.createElement('canvas'),g=c.getContext('2d');
+  g.font=`600 ${size}px Inter,sans-serif`; const w=g.measureText(text).width;
+  c.width=w+30; c.height=size+16; g.font=`600 ${size}px Inter,sans-serif`;
+  g.fillStyle=col; g.textBaseline='middle'; g.fillText(text,15,c.height/2);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),
+    transparent:true,depthWrite:false,depthTest:false}));
+  sp.scale.set(c.width/c.height*0.7,0.7,1); sp.position.set(x,y,z); sp.renderOrder=3; scene.add(sp);
+}
+
+const sphGeo=new THREE.IcosahedronGeometry(1,4);
+const meshById=new Map(), nodeMeshes=[];
+const rankX=new Map([...NODES].sort((a,b)=>a.pos[0]-b.pos[0]).map((n,i)=>[n.id,i]));
+for(const n of NODES){
+  const col=TYPE_COLOR[n.type];
+  const m=new THREE.Mesh(sphGeo,new THREE.MeshStandardMaterial({
+    color:col, emissive:col, emissiveIntensity:1.1, roughness:0.3 }));
+  m.position.set(...n.pos); m.scale.setScalar(0.55);
+  m.userData={ node:n, base:0.55, emi:1.1 };
+  scene.add(m); meshById.set(n.id,m); nodeMeshes.push(m);
+  const yOff=(rankX.get(n.id)%2===0)?1.05:1.95;   // stagger so wide labels don't collide
+  label(n.label, n.pos[0], n.pos[1]+yOff, n.pos[2], '#cdd8ff', 26);
+}
+for(const [a,b] of EDGES){
+  const pa=meshById.get(a).position, pb=meshById.get(b).position;
+  const skip=(a==='input'&&b==='res1')||(a==='res1'&&b==='res2');
+  let pts; if(skip){ const mid=new THREE.Vector3().addVectors(pa,pb).multiplyScalar(.5); mid.y+=4.2;
+    pts=new THREE.QuadraticBezierCurve3(pa,mid,pb).getPoints(24); } else pts=[pa,pb];
+  scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({color:skip?'#3a4a7a':'#5b73b8',transparent:true,
+      opacity:skip?0.25:0.4,blending:THREE.AdditiveBlending,depthWrite:false})));
+}
+const path=['input','ln1','k','attn','proj','res1','ln2','ffn','res2'].map(id=>meshById.get(id).position);
+const PN=40, ppos=new Float32Array(PN*3), pseed=[]; for(let i=0;i<PN;i++) pseed.push(Math.random());
+const pgeo=new THREE.BufferGeometry(); pgeo.setAttribute('position',new THREE.BufferAttribute(ppos,3));
+const pulses=new THREE.Points(pgeo,new THREE.PointsMaterial({color:'#eafaff',size:0.16,
+  transparent:true,opacity:.9,blending:THREE.AdditiveBlending,depthWrite:false})); scene.add(pulses);
+function alongPath(f,out){ const s=f*(path.length-1); const i=Math.min(path.length-2,Math.floor(s)); const t=s-i;
+  return out.lerpVectors(path[i],path[i+1],t); }
+
+// ── selection / raycast ────────────────────────────────────────────────────
+const ray=new THREE.Raycaster(), mouse=new THREE.Vector2();
+let selected=null, downXY=null;
+renderer.domElement.addEventListener('pointerdown',e=>downXY=[e.clientX,e.clientY]);
+renderer.domElement.addEventListener('pointerup',e=>{
+  if(!downXY) return; const moved=Math.hypot(e.clientX-downXY[0],e.clientY-downXY[1]); downXY=null;
+  if(moved>5) return;
+  const r=renderer.domElement.getBoundingClientRect();
+  mouse.x=((e.clientX-r.left)/r.width)*2-1; mouse.y=-((e.clientY-r.top)/r.height)*2+1;
+  ray.setFromCamera(mouse,camera);
+  const hit=ray.intersectObjects(nodeMeshes,false)[0];
+  if(hit) selectNode(hit.object.userData.node.id);
+});
+
+const notePane=document.getElementById('notePane'), reopen=document.getElementById('reopen');
+async function selectNode(id){
+  const m=meshById.get(id); if(!m) return;
+  if(selected&&selected!==m) selected.userData.emi=1.1;
+  selected=m; selected.userData.emi=2.6;
+  const n=m.userData.node;
+  nId.textContent='#'+n.id; nTitle.textContent=n.label;
+  nFile.textContent=n.id+'.md'+(VAULT.dir?'  ·  '+VAULT.name:'  ·  localStorage');
+  if(notePane.classList.contains('collapsed')) toggleCollapse(false);
+  await loadNote(n.id);
+}
+
+// ── vault I/O (File System Access API → fallback localStorage) ─────────────
+const VAULT={ dir:null, name:'' };
+const nId=document.getElementById('nId'), nTitle=document.getElementById('nTitle'), nFile=document.getElementById('nFile');
+function template(n){ return `---\nnode: ${n.id}\ntype: ${n.type}\n---\n\n# ${n.label}\n\n_Research notes for **${n.label}**._\n\n- \n\nLinks: [[ln1]] · [[attn]] · [[ffn]]\n`; }
+document.getElementById('openVault').onclick=async()=>{
+  if(!window.showDirectoryPicker){ toast('No File System Access API — staying on localStorage (use Chrome/Edge).'); return; }
+  try{ VAULT.dir=await window.showDirectoryPicker({id:'progress3d-vault',mode:'readwrite'}); VAULT.name=VAULT.dir.name;
+    document.getElementById('vaultStatus').innerHTML='vault: <b>'+VAULT.name+'</b>';
+    toast('Vault connected → '+VAULT.name+'/<node>.md'); if(selected) selectNode(selected.userData.node.id);
+  }catch(e){}
+};
+async function readNote(id){ if(VAULT.dir){ try{ const fh=await VAULT.dir.getFileHandle(id+'.md');
+    return await (await fh.getFile()).text(); }catch(e){ return null; } } return localStorage.getItem('note:'+id); }
+async function writeNote(id,text){ if(VAULT.dir){ const fh=await VAULT.dir.getFileHandle(id+'.md',{create:true});
+    const w=await fh.createWritable(); await w.write(text); await w.close(); } else localStorage.setItem('note:'+id,text); }
+
+// ── editor / preview ────────────────────────────────────────────────────────
+const editor=document.getElementById('editor'), preview=document.getElementById('preview');
+const tabEdit=document.getElementById('tabEdit'), tabPrev=document.getElementById('tabPrev'), dirtyEl=document.getElementById('dirty');
+let curId=null;
+async function loadNote(id){ curId=id; let txt=await readNote(id);
+  if(txt==null){ txt=template(NODES.find(n=>n.id===id)); await writeNote(id,txt); }
+  editor.value=txt; setDirty(false); if(preview.style.display!=='none') renderPreview(); }
+function setDirty(d){ dirtyEl.textContent=d?'•':''; }
+editor.addEventListener('input',()=>setDirty(true));
+editor.addEventListener('keydown',e=>{ if((e.metaKey||e.ctrlKey)&&e.key==='s'){ e.preventDefault(); save(); }});
+async function save(){ if(curId==null) return; await writeNote(curId,editor.value); setDirty(false); toast('Saved '+curId+'.md'); }
+document.getElementById('btnSave').onclick=save;
+function showEdit(on){ editor.style.display=on?'block':'none'; preview.style.display=on?'none':'block';
+  tabEdit.classList.toggle('active',on); tabPrev.classList.toggle('active',!on); if(!on) renderPreview(); }
+tabEdit.onclick=()=>showEdit(true); tabPrev.onclick=()=>showEdit(false);
+function renderPreview(){ const wiki=editor.value.replace(/\[\[([a-zA-Z0-9_\-\.]+)\]\]/g,
+    (m,id)=>`<a class="wiki" data-node="${id}">${id}</a>`);
+  preview.innerHTML=marked.parse(wiki);
+  preview.querySelectorAll('a.wiki').forEach(a=>a.onclick=ev=>{ ev.preventDefault();
+    const id=a.dataset.node; meshById.has(id)?selectNode(id):toast('No node "'+id+'"'); }); }
+
+// ── fullscreen / collapse / resize divider ──────────────────────────────────
+const btnFull=document.getElementById('btnFull'), btnCollapse=document.getElementById('btnCollapse');
+btnFull.onclick=()=>{ const f=notePane.classList.toggle('full'); btnFull.textContent=f?'⤡':'⤢';
+  btnFull.title=f?'Exit fullscreen':'Fullscreen'; requestAnimationFrame(fit); };
+function toggleCollapse(force){ const c=force!==undefined?force:!notePane.classList.contains('collapsed');
+  notePane.classList.toggle('collapsed',c); reopen.style.display=c?'block':'none'; requestAnimationFrame(fit); }
+btnCollapse.onclick=()=>toggleCollapse(true);
+reopen.onclick=()=>{ toggleCollapse(false); if(!curId) selectNode('attn'); };
+
+const divider=document.getElementById('divider'); let dragging=false;
+divider.addEventListener('pointerdown',e=>{ dragging=true; divider.setPointerCapture(e.pointerId); document.body.style.cursor='col-resize'; });
+divider.addEventListener('pointermove',e=>{ if(!dragging) return;
+  const w=Math.min(Math.max(300,e.clientX),innerWidth*0.72);
+  document.documentElement.style.setProperty('--noteW',w+'px'); fit(); });
+divider.addEventListener('pointerup',e=>{ dragging=false; document.body.style.cursor=''; });
+
+// ── voice hook (wire your voice model here later) ──────────────────────────
+document.getElementById('btnVoice').onclick=()=>voiceChat(curId, editor.value);
+async function voiceChat(nodeId, noteText){ if(!nodeId){ toast('Select a node first'); return; }
+  // TODO(user): connect your voice API. Available: nodeId, note markdown, full NODES/EDGES graph.
+  toast('🎙 Voice chat for "'+nodeId+'" — drop your voice API into voiceChat()'); }
+
+let toastT; const toastEl=document.getElementById('toast');
+function toast(msg){ toastEl.textContent=msg; toastEl.classList.add('show'); clearTimeout(toastT);
+  toastT=setTimeout(()=>toastEl.classList.remove('show'),2600); }
+
+// ── loop ────────────────────────────────────────────────────────────────────
+const clock=new THREE.Clock(), tmp=new THREE.Vector3();
+function loop(){ requestAnimationFrame(loop); const t=clock.getElapsedTime();
+  for(const m of nodeMeshes){ const u=m.userData; const target=m===selected?u.emi:1.1;
+    u.cur=(u.cur??1.1)+(target-(u.cur??1.1))*0.12;
+    m.material.emissiveIntensity=u.cur*(0.85+0.25*Math.sin(t*2.2+m.position.x));
+    m.scale.setScalar(u.base*(m===selected?1.35:1)*(0.96+0.06*Math.sin(t*2.6+m.position.x))); }
+  const arr=pulses.geometry.attributes.position.array;
+  for(let i=0;i<PN;i++){ pseed[i]+=0.0016+0.0010*(i%5); if(pseed[i]>1)pseed[i]-=1;
+    alongPath(pseed[i],tmp); arr[i*3]=tmp.x; arr[i*3+1]=tmp.y; arr[i*3+2]=tmp.z; }
+  pulses.geometry.attributes.position.needsUpdate=true;
+  controls.update(); composer.render(); }
+loop();
+
+selectNode('attn');
+</script>
+</body>
+</html>
