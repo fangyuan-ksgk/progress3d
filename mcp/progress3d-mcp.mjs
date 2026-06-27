@@ -86,12 +86,14 @@ async function ghRead(rel) {
   const j = await r.json();
   return { text: Buffer.from(j.content || "", "base64").toString("utf8"), sha: j.sha };
 }
-async function ghWrite(rel, text) {
+async function ghWrite(rel, text, tries = 0) {
   const cur = await ghRead(rel).catch(() => null);
   const r = await ghApi("PUT", `/repos/${GH_REPO}/contents/${encodeURI(ghRel(rel))}`, {
     message: `progress3d: ${cur ? "update" : "add"} ${rel}`,
     content: Buffer.from(text).toString("base64"), branch: GH_BRANCH, sha: cur?.sha,
   });
+  // 409 = the file's sha moved under us (another writer); re-read and retry a few times.
+  if (r.status === 409 && tries < 4) return ghWrite(rel, text, tries + 1);
   if (!r.ok) throw new Error(`GitHub ${r.status}: ${(await r.text()).slice(0, 140)}`);
 }
 async function ghListMd() {
@@ -228,7 +230,11 @@ async function callTool(name, a = {}) {
 
 const send = (msg) => process.stdout.write(JSON.stringify(msg) + "\n");
 const rl = readline.createInterface({ input: process.stdin });
-rl.on("line", async (line) => {
+// Serialize: process one request fully before the next, so concurrent tool calls (e.g. write then
+// append to the same file) can't race each other's read-modify-write. Order is arrival order.
+let chain = Promise.resolve();
+rl.on("line", (line) => { chain = chain.then(() => handleLine(line)); });
+async function handleLine(line) {
   line = line.trim();
   if (!line) return;
   let req;
@@ -252,4 +258,4 @@ rl.on("line", async (line) => {
   } else if (id !== undefined) {
     send({ jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } });
   }
-});
+}

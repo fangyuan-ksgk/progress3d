@@ -62,6 +62,10 @@ With `PROGRESS3D_REPO` + a token set, the **vault file tools** (`list_vault`/`re
 `write_file`/`append_file`/`search_vault`) target the repo over HTTPS — no clone, no tunnel.
 The token needs `contents:write` on that repo (a fine-grained PAT scoped to the one repo is ideal).
 
+Also drop the **`vault-notes` skill** on the image so agents know *how* to write notes (conventions,
+frontmatter, wiki-links, don't touch the map): `cp -r .claude/skills/vault-notes ~/.claude/skills/`.
+(`./mcp/install.sh` does this for you locally; bake the same two steps into the image for the fleet.)
+
 **Map tools stay local on purpose.** `graph.json` is one shared file; many writers = merge hell.
 Cloud agents add NOTES (unique paths like `inbox/<topic>-<agent>.md`); curate the map locally.
 
