@@ -68,6 +68,7 @@
 
 /* Claude Code chat panel */
 .p3d-chat { display: flex; flex-direction: column; height: 100%; padding: 0 !important; }
+.p3d-chat.p3d-chat-dragover { outline: 2px dashed var(--interactive-accent); outline-offset: -6px; background: rgba(120, 150, 255, 0.06); }
 .p3d-chat-head { display: flex; align-items: center; justify-content: space-between;
   padding: 8px 12px; border-bottom: 1px solid var(--background-modifier-border); }
 .p3d-chat-title { font-weight: 650; font-size: 13px; }

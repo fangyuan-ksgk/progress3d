@@ -50,6 +50,16 @@ export class ClaudeChatView extends ItemView {
     this.input.addEventListener("keydown", (e: any) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); this.send(); } });
     this.input.addEventListener("paste", (e: any) => this.handlePaste(e));
 
+    // Drag an image file anywhere onto the panel to attach it.
+    c.addEventListener("dragover", (e: any) => {
+      if (!this.dragHasFiles(e)) return;
+      e.preventDefault(); e.stopPropagation();
+      e.dataTransfer.dropEffect = "copy";
+      c.addClass("p3d-chat-dragover");
+    });
+    c.addEventListener("dragleave", (e: any) => { if (e.target === c) c.removeClass("p3d-chat-dragover"); });
+    c.addEventListener("drop", (e: any) => this.handleDrop(e, c));
+
     this.renderChips();
     this.append("assistant", "Hi — I'm Claude Code, running in your vault. Select text or open a node's note, hit “@ selection”, attach images with 📎, and ask.");
   }
@@ -104,6 +114,29 @@ export class ClaudeChatView extends ItemView {
     inp.type = "file"; inp.accept = "image/*";
     inp.onchange = async () => { const f = inp.files && inp.files[0]; if (f) await this.addImage(f); };
     inp.click();
+  }
+
+  private dragHasFiles(e: any): boolean {
+    const t = e.dataTransfer?.types;
+    return !!t && Array.from(t).includes("Files");
+  }
+
+  private async handleDrop(e: any, c: any) {
+    const dt = e.dataTransfer;
+    if (!dt) return;
+    const imgs: File[] = [];
+    if (dt.files && dt.files.length) {
+      for (const f of Array.from(dt.files) as File[]) if (f.type && f.type.startsWith("image/")) imgs.push(f);
+    }
+    if (!imgs.length && dt.items) {
+      for (const it of Array.from(dt.items) as any[]) {
+        if (it.kind === "file" && it.type && it.type.startsWith("image/")) { const f = it.getAsFile(); if (f) imgs.push(f); }
+      }
+    }
+    c.removeClass("p3d-chat-dragover");
+    if (!imgs.length) { new Notice("Drop an image file to attach it."); return; }
+    e.preventDefault(); e.stopPropagation();  // keep Obsidian from opening the dropped file
+    for (const f of imgs) await this.addImage(f);
   }
 
   private async handlePaste(e: any) {
