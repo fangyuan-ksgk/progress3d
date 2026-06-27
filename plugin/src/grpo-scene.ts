@@ -256,11 +256,9 @@ export class GrpoScene {
     this.hFormula = document.createElement("div"); css(this.hFormula, { marginTop: "7px", fontSize: "12.5px", color: "#9be0c0", fontFamily: '"SF Mono",ui-monospace,Menlo,monospace' });
     this.hDesc = document.createElement("div"); css(this.hDesc, { marginTop: "7px", fontSize: "11.5px", lineHeight: "1.5", color: "#b3a8d8" });
     this.hBadge = document.createElement("span"); css(this.hBadge, { display: "inline-block", marginTop: "9px", fontSize: "11px", padding: "3px 10px", borderRadius: "999px" });
-    const hint = document.createElement("div"); hint.textContent = "↑ toolbar “mode” cycles Auto ⇄ GRPO ⇄ Dr. GRPO · click the policy or a rollout to open its note";
-    css(hint, { marginTop: "10px", fontSize: "10.5px", color: "#6f7aa6" });
 
     hud.appendChild(h1); hud.appendChild(this.hPhase); hud.appendChild(this.hFormula);
-    hud.appendChild(this.hDesc); hud.appendChild(this.hBadge); hud.appendChild(hint);
+    hud.appendChild(this.hDesc); hud.appendChild(this.hBadge);
     this.host.appendChild(hud); this.hud = hud;
   }
 
