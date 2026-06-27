@@ -67,13 +67,22 @@ export class ClaudeChatView extends ItemView {
   private setMsg(el: any, role: "user" | "assistant", text: string) {
     el.empty();
     if (role !== "assistant") { el.setText(text); return; }
+    const md = this.normalizeMath(text);
     try {
       const MR: any = MarkdownRenderer;
-      if (MR?.render) MR.render(this.app, text, el, this.plugin.folder || "", this);
-      else if (MR?.renderMarkdown) MR.renderMarkdown(text, el, this.plugin.folder || "", this);
-      else el.setText(text);
-    } catch { el.setText(text); }
+      if (MR?.render) MR.render(this.app, md, el, this.plugin.folder || "", this);
+      else if (MR?.renderMarkdown) MR.renderMarkdown(md, el, this.plugin.folder || "", this);
+      else el.setText(md);
+    } catch { el.setText(md); }
     this.logEl.scrollTop = this.logEl.scrollHeight;
+  }
+
+  // Obsidian's MathJax only renders $...$ / $$...$$. Claude frequently emits \(...\) and \[...\];
+  // rewrite those to the $ form so formulas actually compile in the chat.
+  private normalizeMath(s: string): string {
+    return s
+      .replace(/\\\[([\s\S]*?)\\\]/g, (_m, e) => `$$${e}$$`)
+      .replace(/\\\(([\s\S]*?)\\\)/g, (_m, e) => `$${e}$`);
   }
 
   private async captureSelection() {

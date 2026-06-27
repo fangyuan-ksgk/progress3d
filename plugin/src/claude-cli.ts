@@ -15,7 +15,9 @@ const SYSTEM_PROMPT =
   "Use the `progress3d` MCP tools (get_graph, list_nodes, read_note, write_note, append_note, " +
   "add_node, connect_nodes, delete_node) to read and edit the map directly — don't ask the user to " +
   "edit graph.json by hand. Follow vault conventions: typed notes, mandatory wiki-links between " +
-  "related nodes, frontmatter for Dataview. Be concise and act on the map when asked.";
+  "related nodes, frontmatter for Dataview. Be concise and act on the map when asked. " +
+  "Write math in Obsidian syntax: inline $...$ and display $$...$$ (not \\(...\\) or \\[...\\]), " +
+  "and put ASCII diagrams in fenced code blocks so alignment is preserved.";
 
 function run(cmd: string, args: string[], cwd?: string): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
