@@ -38,6 +38,30 @@ if ! command -v node >/dev/null 2>&1; then
   log "installing Node 20…"; curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs
 fi
 
+# 2b · kimi-code CLI — the AGENTIC kimi judge (reads files/runs checks, not a one-shot LLM call).
+# Headless: authenticate with the Kimi-For-Coding key in config.toml (no OAuth login needed).
+if ! command -v kimi >/dev/null 2>&1; then
+  log "installing kimi-code…"; curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash
+fi
+export PATH="$HOME/.kimi-code/bin:$PATH"
+grep -q '.kimi-code/bin' "$HOME/.bashrc" 2>/dev/null || echo 'export PATH="$HOME/.kimi-code/bin:$PATH"' >> "$HOME/.bashrc"
+if [ -n "${MOONSHOT_API_KEY:-}" ]; then
+  log "configuring kimi-code (headless, kfc key)…"; mkdir -p "$HOME/.kimi-code"
+  cat > "$HOME/.kimi-code/config.toml" <<TOML
+default_model = "kimi-code/kimi-for-coding"
+[providers."managed:kimi-code"]
+type = "kimi"
+api_key = "${MOONSHOT_API_KEY}"
+base_url = "https://api.kimi.com/coding/v1"
+[models."kimi-code/kimi-for-coding"]
+provider = "managed:kimi-code"
+model = "kimi-for-coding"
+max_context_size = 262144
+capabilities = [ "thinking", "always_thinking", "image_in", "video_in", "tool_use" ]
+display_name = "K2.7 Code"
+TOML
+fi
+
 # 3 · the progress3d repo (MCP server, skills, judge) ------------------------
 if [ ! -d "$PROG/.git" ] && [ ! -f "$PROG/mcp/progress3d-mcp.mjs" ]; then
   if [ -n "$REPO_SRC" ]; then log "copying progress3d from $REPO_SRC…"; mkdir -p "$PROG"; cp -R "$REPO_SRC/." "$PROG/";

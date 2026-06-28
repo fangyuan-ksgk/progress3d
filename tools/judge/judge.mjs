@@ -141,11 +141,9 @@ function capture(htmlAbs, outDir) {
 function runJudge(name, images, intent) {
   const def = JUDGE_DEFS[name];
   if (!def) return Promise.resolve({ name, error: `unknown judge '${name}'` });
-  // kimi headless via direct HTTP: always when the Kimi-For-Coding key (MOONSHOT_API_KEY) is set;
-  // else via OpenRouter when forced or there's no local kimi CLI.
-  const noKimiCli = !spawnSync("sh", ["-c", "command -v kimi"], { encoding: "utf8" }).stdout.trim();
-  if (name === "kimi" && (process.env.MOONSHOT_API_KEY ||
-      (process.env.OPENROUTER_API_KEY && (process.env.PROGRESS3D_KIMI_BACKEND === "openrouter" || noKimiCli)))) {
+  // kimi is an AGENT (kimi-code CLI) by default — it reads files/runs checks, not a one-shot call.
+  // The single-call HTTP path is opt-in only (PROGRESS3D_KIMI_BACKEND=http) for env with no CLI.
+  if (name === "kimi" && process.env.PROGRESS3D_KIMI_BACKEND === "http") {
     return httpKimiCritique(images, intent)
       .then((out) => { const m = out.match(/\{[\s\S]*\}/); return m ? { name, ...JSON.parse(m[0]) } : { name, error: `no JSON from kimi: ${out.slice(0, 80)}` }; })
       .catch((e) => ({ name, error: String(e?.message || e) }));
