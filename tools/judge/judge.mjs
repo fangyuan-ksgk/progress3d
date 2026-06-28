@@ -36,21 +36,9 @@ function glmKey() {
 }
 
 const JUDGE_DEFS = {
-  // kimi: local kimi-code CLI if present; else headless via Moonshot's Anthropic-compatible
-  // endpoint through the claude harness (RunPod has no kimi CLI / OAuth) — set MOONSHOT_API_KEY.
-  kimi: (prompt) => {
-    const hasKimi = spawnSync("sh", ["-c", "command -v kimi"], { encoding: "utf8" }).stdout.trim();
-    if (hasKimi && !process.env.MOONSHOT_API_KEY) return { cmd: "kimi", args: ["-p", prompt] };
-    return {
-      cmd: "claude", args: ["-p", prompt, "--permission-mode", "bypassPermissions"],
-      env: {
-        ANTHROPIC_BASE_URL: "https://api.moonshot.ai/anthropic",
-        ANTHROPIC_AUTH_TOKEN: process.env.MOONSHOT_API_KEY || "",
-        ANTHROPIC_API_KEY: null,
-        API_TIMEOUT_MS: "300000",
-      },
-    };
-  },
+  // kimi: local kimi-code CLI fallback (used only when no MOONSHOT/OPENROUTER key is set; the
+  // keyed, headless HTTP path is handled in runJudge → httpKimiCritique).
+  kimi: (prompt) => ({ cmd: "kimi", args: ["-p", prompt] }),
   // verified: GLM via z.ai through the claude harness. Drop ANTHROPIC_API_KEY so AUTH_TOKEN +
   // the z.ai base URL take effect (otherwise the user's own key routes to Anthropic). Default
   // server-side model mapping is multimodal enough to read images.
@@ -92,26 +80,41 @@ function prompt(images, intent) {
   ].filter(Boolean).join("\n");
 }
 
-// ---- kimi (or any model) headless via OpenRouter's Anthropic-compatible endpoint ------------
-// A direct HTTP call — no CLI, no OAuth — using OPENROUTER_API_KEY (the key the user actually has).
-// Node base64-embeds the images; if the model rejects images (kimi-k2 is text-only) we retry
-// text-only. kimi-k2 is strong on the code/no-redundancy critique; GLM (z.ai) carries vision.
-async function openrouterCritique(images, intent) {
-  if (typeof fetch === "undefined") throw new Error("OpenRouter mode needs Node >= 18");
-  const key = process.env.OPENROUTER_API_KEY;
-  const model = process.env.PROGRESS3D_KIMI_MODEL || "moonshotai/kimi-k2";
-  const post = async (withImages) => {
-    const content = [{ type: "text", text: prompt(images, intent) }];
-    if (withImages) for (const p of images) { try { content.push({ type: "image", source: { type: "base64", media_type: "image/png", data: readFileSync(p).toString("base64") } }); } catch { /* skip */ } }
-    const r = await fetch("https://openrouter.ai/api/v1/messages", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({ model, max_tokens: 1600, messages: [{ role: "user", content }] }),
-    });
+// ---- kimi headless via a direct HTTP call (no CLI, no OAuth) --------------------------------
+// Prefers Kimi-For-Coding (MOONSHOT_API_KEY from kimi.com/code/console) on its OpenAI-compatible
+// endpoint api.kimi.com/coding/v1 (model kimi-for-coding, vision via image_url). Falls back to
+// OpenRouter's Anthropic endpoint (kimi-k2) if only OPENROUTER_API_KEY is present. Node base64-
+// embeds the images; retries text-only if the model rejects them.
+const b64png = (p) => { try { return readFileSync(p).toString("base64"); } catch { return null; } };
+async function httpKimiCritique(images, intent) {
+  if (typeof fetch === "undefined") throw new Error("HTTP judge needs Node >= 18");
+  const text = prompt(images, intent);
+  const kfc = process.env.MOONSHOT_API_KEY;
+  if (kfc) {                       // Kimi-For-Coding — OpenAI-compatible
+    const base = process.env.KIMI_BASE || "https://api.kimi.com/coding/v1";
+    const model = process.env.KIMI_MODEL || "kimi-for-coding";
+    const call = async (withImg) => {
+      const blocks = [{ type: "text", text }];
+      if (withImg) for (const p of images) { const d = b64png(p); if (d) blocks.push({ type: "image_url", image_url: { url: `data:image/png;base64,${d}` } }); }
+      const r = await fetch(`${base}/chat/completions`, { method: "POST",
+        headers: { Authorization: `Bearer ${kfc}`, "content-type": "application/json" },
+        body: JSON.stringify({ model, max_tokens: 3000, messages: [{ role: "user", content: withImg ? blocks : text }] }) });
+      if (!r.ok) throw new Error(`Kimi ${r.status}: ${(await r.text()).slice(0, 140)}`);
+      return (await r.json()).choices?.[0]?.message?.content || "";
+    };
+    try { return await call(images.length > 0); } catch { return await call(false); }
+  }
+  const model = process.env.PROGRESS3D_KIMI_MODEL || "moonshotai/kimi-k2";  // OpenRouter — Anthropic-compatible
+  const call = async (withImg) => {
+    const content = [{ type: "text", text }];
+    if (withImg) for (const p of images) { const d = b64png(p); if (d) content.push({ type: "image", source: { type: "base64", media_type: "image/png", data: d } }); }
+    const r = await fetch("https://openrouter.ai/api/v1/messages", { method: "POST",
+      headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify({ model, max_tokens: 1600, messages: [{ role: "user", content }] }) });
     if (!r.ok) throw new Error(`OpenRouter ${r.status}: ${(await r.text()).slice(0, 120)}`);
     return ((await r.json()).content || []).map((c) => c.text || "").join("");
   };
-  try { return await post(images.length > 0); } catch { return await post(false); }
+  try { return await call(images.length > 0); } catch { return await call(false); }
 }
 
 // ---- capture: shoot N frames of an HTML file in headless Chrome -----------------------------
@@ -138,12 +141,13 @@ function capture(htmlAbs, outDir) {
 function runJudge(name, images, intent) {
   const def = JUDGE_DEFS[name];
   if (!def) return Promise.resolve({ name, error: `unknown judge '${name}'` });
-  // kimi headless via OpenRouter: when forced, or on a box with the key but no local kimi CLI.
+  // kimi headless via direct HTTP: always when the Kimi-For-Coding key (MOONSHOT_API_KEY) is set;
+  // else via OpenRouter when forced or there's no local kimi CLI.
   const noKimiCli = !spawnSync("sh", ["-c", "command -v kimi"], { encoding: "utf8" }).stdout.trim();
-  if (name === "kimi" && process.env.OPENROUTER_API_KEY &&
-      (process.env.PROGRESS3D_KIMI_BACKEND === "openrouter" || noKimiCli)) {
-    return openrouterCritique(images, intent)
-      .then((out) => { const m = out.match(/\{[\s\S]*\}/); return m ? { name, ...JSON.parse(m[0]) } : { name, error: "no JSON from OpenRouter" }; })
+  if (name === "kimi" && (process.env.MOONSHOT_API_KEY ||
+      (process.env.OPENROUTER_API_KEY && (process.env.PROGRESS3D_KIMI_BACKEND === "openrouter" || noKimiCli)))) {
+    return httpKimiCritique(images, intent)
+      .then((out) => { const m = out.match(/\{[\s\S]*\}/); return m ? { name, ...JSON.parse(m[0]) } : { name, error: `no JSON from kimi: ${out.slice(0, 80)}` }; })
       .catch((e) => ({ name, error: String(e?.message || e) }));
   }
   const { cmd, args, env } = def(prompt(images, intent));
