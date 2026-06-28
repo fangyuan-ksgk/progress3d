@@ -75,8 +75,9 @@ claude mcp add -s user progress3d -e PROGRESS3D_VAULT="$VAULT" -- node "$PROG/mc
 
 # 7 · judge env — kimi (Moonshot) + glm (z.ai), both through the claude harness
 cat > "$HOME/.progress3d-judge.env" <<ENV
-export GLM_API_KEY="${GLM_API_KEY:-}"
-export MOONSHOT_API_KEY="${MOONSHOT_API_KEY:-}"
+export GLM_API_KEY="${GLM_API_KEY:-}"            # glm judge — z.ai (vision, via claude harness)
+export MOONSHOT_API_KEY="${MOONSHOT_API_KEY:-}"  # kimi judge — Moonshot Anthropic endpoint (if valid)
+export OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}"  # kimi judge fallback — OpenRouter (kimi-k2, text)
 export PROGRESS3D_VAULT="$VAULT"
 export JUDGES="kimi,glm"
 export PATH="\$HOME/.local/bin:\$PATH"

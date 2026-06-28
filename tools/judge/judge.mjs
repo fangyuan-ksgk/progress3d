@@ -15,7 +15,7 @@
 // then re-run to confirm the scores went up. Exit 0 always; this is advisory.
 
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, statSync, readFileSync } from "node:fs";
 import { resolve, extname, basename, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -92,6 +92,28 @@ function prompt(images, intent) {
   ].filter(Boolean).join("\n");
 }
 
+// ---- kimi (or any model) headless via OpenRouter's Anthropic-compatible endpoint ------------
+// A direct HTTP call — no CLI, no OAuth — using OPENROUTER_API_KEY (the key the user actually has).
+// Node base64-embeds the images; if the model rejects images (kimi-k2 is text-only) we retry
+// text-only. kimi-k2 is strong on the code/no-redundancy critique; GLM (z.ai) carries vision.
+async function openrouterCritique(images, intent) {
+  if (typeof fetch === "undefined") throw new Error("OpenRouter mode needs Node >= 18");
+  const key = process.env.OPENROUTER_API_KEY;
+  const model = process.env.PROGRESS3D_KIMI_MODEL || "moonshotai/kimi-k2";
+  const post = async (withImages) => {
+    const content = [{ type: "text", text: prompt(images, intent) }];
+    if (withImages) for (const p of images) { try { content.push({ type: "image", source: { type: "base64", media_type: "image/png", data: readFileSync(p).toString("base64") } }); } catch { /* skip */ } }
+    const r = await fetch("https://openrouter.ai/api/v1/messages", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify({ model, max_tokens: 1600, messages: [{ role: "user", content }] }),
+    });
+    if (!r.ok) throw new Error(`OpenRouter ${r.status}: ${(await r.text()).slice(0, 120)}`);
+    return ((await r.json()).content || []).map((c) => c.text || "").join("");
+  };
+  try { return await post(images.length > 0); } catch { return await post(false); }
+}
+
 // ---- capture: shoot N frames of an HTML file in headless Chrome -----------------------------
 function capture(htmlAbs, outDir) {
   if (!existsSync(CHROME)) { console.error(`Chrome not found at ${CHROME}`); process.exit(1); }
@@ -116,6 +138,14 @@ function capture(htmlAbs, outDir) {
 function runJudge(name, images, intent) {
   const def = JUDGE_DEFS[name];
   if (!def) return Promise.resolve({ name, error: `unknown judge '${name}'` });
+  // kimi headless via OpenRouter: when forced, or on a box with the key but no local kimi CLI.
+  const noKimiCli = !spawnSync("sh", ["-c", "command -v kimi"], { encoding: "utf8" }).stdout.trim();
+  if (name === "kimi" && process.env.OPENROUTER_API_KEY &&
+      (process.env.PROGRESS3D_KIMI_BACKEND === "openrouter" || noKimiCli)) {
+    return openrouterCritique(images, intent)
+      .then((out) => { const m = out.match(/\{[\s\S]*\}/); return m ? { name, ...JSON.parse(m[0]) } : { name, error: "no JSON from OpenRouter" }; })
+      .catch((e) => ({ name, error: String(e?.message || e) }));
+  }
   const { cmd, args, env } = def(prompt(images, intent));
   const childEnv = { ...process.env };
   for (const [k, v] of Object.entries(env || {})) { if (v == null) delete childEnv[k]; else childEnv[k] = v; }

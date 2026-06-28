@@ -32,6 +32,9 @@ if git -C "$VAULT" remote get-url origin >/dev/null 2>&1; then
   git -C "$VAULT" commit -q -m "runpod verify $NOTE" >/dev/null 2>&1 || true
   chk "git push"  "git -C \"$VAULT\" push origin HEAD"
   chk "git pull"  "git -C \"$VAULT\" pull --no-edit --no-rebase"
+  # self-clean: don't leave verify notes littering the vault
+  git -C "$VAULT" rm -q "$NOTE" 2>/dev/null && git -C "$VAULT" commit -q -m "cleanup verify note" >/dev/null 2>&1 \
+    && git -C "$VAULT" push -q origin HEAD 2>/dev/null && echo "        (verify note cleaned up)"
 else echo "  SKIP  no vault git remote (set GITHUB_TOKEN + VAULT_REPO)"; fi
 
 echo "== 5 · Agent judge (kimi + glm) =="
