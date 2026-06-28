@@ -69,6 +69,10 @@ frontmatter, wiki-links, don't touch the map): `cp -r .claude/skills/vault-notes
 **Map tools stay local on purpose.** `graph.json` is one shared file; many writers = merge hell.
 Cloud agents add NOTES (unique paths like `inbox/<topic>-<agent>.md`); curate the map locally.
 
+**Always pull before push.** The relay repo has many writers — any agent (or script) that commits to
+it must `git pull --no-rebase` BEFORE `git push`, or its push will be rejected on a non-fast-forward.
+`runpod-verify.sh` and Obsidian Git (`pullBeforePush`) already do this; follow the same rule by hand.
+
 **On your machine** — receive the notes by pulling the repo into your vault. Either:
 - Install the **Obsidian Git** community plugin and set auto-pull (e.g. every few minutes), or
 - a cron/launchd job: `git -C "$HOME/vault/TV" pull --rebase` (make the vault, or an `inbox/`

@@ -47,3 +47,7 @@ Write real Obsidian markdown so it renders and links in the vault:
 2. `write_file inbox/<topic>-<disc>.md` with frontmatter + body.
 3. Tell the user exactly what path you wrote, so they can find it. If the vault is GitHub-backed,
    note that it lands in their vault after the next sync (Obsidian Git auto-pull / `git pull`).
+
+> **Always pull before push.** The vault is shared by many agents — when you commit to it, run
+> `git pull --no-rebase` (or Obsidian Git "Commit-and-sync", which has `pullBeforePush` on) BEFORE
+> pushing, so concurrent notes from other agents aren't clobbered and your push isn't rejected.

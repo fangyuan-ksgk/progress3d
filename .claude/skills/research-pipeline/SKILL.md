@@ -48,6 +48,9 @@ Copy the revised 4 artifacts into `projects/<slug>/progress/` + a concise **`cri
 (scores, what was applied, what was rejected and why). Flip the tracker marker to `done`. Leave the
 vault for the user to push manually (Obsidian Git "Commit-and-sync" — they want no auto-sync latency).
 
+> **Always pull before push.** If you ever commit to the vault yourself, `git pull --no-rebase` first
+> (the vault is shared by many agents) so you don't clobber others' work or get a rejected push.
+
 ## Reference run
 `projects/spacex-ipo-beneficiary/` — "SpaceX IPO benefits which company the most?" Two-winner finding
 (Alphabet absolute $, Baron Partners relative %); full 4 artifacts + Kimi/GLM critique round.

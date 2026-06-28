@@ -26,14 +26,15 @@ printf '%s\n' \
 chk "note written to vault"      "test -f \"$VAULT/$NOTE\""
 [ -f "$VAULT/$NOTE" ] && echo "        | $(head -1 "$VAULT/$NOTE")"
 
-echo "== 4 · Push & pull =="
+echo "== 4 · Pull-before-push & pull =="
 if git -C "$VAULT" remote get-url origin >/dev/null 2>&1; then
   git -C "$VAULT" add -A >/dev/null 2>&1
   git -C "$VAULT" commit -q -m "runpod verify $NOTE" >/dev/null 2>&1 || true
-  chk "git push"  "git -C \"$VAULT\" push origin HEAD"
-  chk "git pull"  "git -C \"$VAULT\" pull --no-edit --no-rebase"
-  # self-clean: don't leave verify notes littering the vault
+  chk "git pull (before push)" "git -C \"$VAULT\" pull --no-rebase --no-edit"   # always pull before pushing
+  chk "git push"               "git -C \"$VAULT\" push origin HEAD"
+  # self-clean (also pull before push): don't leave verify notes littering the vault
   git -C "$VAULT" rm -q "$NOTE" 2>/dev/null && git -C "$VAULT" commit -q -m "cleanup verify note" >/dev/null 2>&1 \
+    && git -C "$VAULT" pull -q --no-rebase --no-edit 2>/dev/null \
     && git -C "$VAULT" push -q origin HEAD 2>/dev/null && echo "        (verify note cleaned up)"
 else echo "  SKIP  no vault git remote (set GITHUB_TOKEN + VAULT_REPO)"; fi
 
