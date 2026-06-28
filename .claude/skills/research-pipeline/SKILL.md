@@ -26,13 +26,18 @@ The calculation + assets that the map's notes will draw from (minimal, NO redund
   + one-line finding + a link to "Open the 3D map" (the map slug) and to the raw files.
 
 ## 2 · The 3D research map  (THE deliverable)
-- **Map graph** → `progress3d/maps/<slug>.json`: `{title, nodes[], edges[]}`. Nodes use the **research
-  node types** (clean glowing spheres, not transformer cells):
-  `hub` (the central subject) · `primary` (the headline/summary) · `doc` (a report section: figure /
-  method / sources) · `entity` (a domain entity) · `accent` (the answer / highlighted entity) ·
-  `muted` (secondary/inactive). Lay nodes out in 3D so the *shape* carries meaning (e.g. value flows
-  hub→entities; report sections orbit the hub). Node `id`s must be globally unique → prefix per project
-  (`<slug-abbr>-summary`, `<slug-abbr>-<entity>`).
+- **Map graph** → `progress3d/maps/<slug>.json`: `{title, nodes[], edges[]}`. Node types:
+  - **`board`** — a flat dashboard CARD (title + `sub` caption) for each report section
+    (① summary ② figure ③ method ④ sources + a "how to read" legend). Put them in a column/panel —
+    they must look like a board, NOT like data nodes.
+  - **`hub`** (subject) · **`entity`** (domain entity) · **`accent`** (the answer/winner) · **`muted`**
+    (secondary) — clean glowing spheres. Give each a **`weight`** (a magnitude, e.g. % gain) so node
+    SIZE encodes the quantity.
+  - **`text`** — label-only node for **axis guides** ("absolute $ gain →", "↑ relative % gain").
+  - **ENCODE THE QUANTITATIVE FINDING IN THE LAYOUT**: position nodes by the real metrics (e.g.
+    x = absolute gain, y = relative gain), size by `weight`, and put the numbers in the labels — keep
+    `pos` z≈0 so perspective doesn't distort sizes. The two-axis story must read off the map itself.
+  - Node `id`s globally unique → prefix per project (`<abbr>-summary`, `<abbr>-<entity>`).
 - **Node notes** → `progress3d/<id>.md` (one per node — this is the note "embedded" in the node; clicking
   the node opens it):
   - `…-summary` (primary): the finding/TL;DR + wiki-links to the other nodes.
@@ -48,11 +53,14 @@ Judges are **agents that run/observe**, not one-shot calls. Drive them like `too
 - **kimi** = `kimi -p` (kimi-code agent; headless via the kfc key in `~/.kimi-code/config.toml`).
 - **glm** = `claude -p --permission-mode bypassPermissions` with `ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic`,
   `ANTHROPIC_AUTH_TOKEN=$GLM_API_KEY`, `ANTHROPIC_API_KEY` unset.
-Ask each (structured JSON verdict): (a) does the **map** tell the story on its own — clear nodes, sensible
-shape, the answer obvious? (b) does the **result figure** prove the method's value / is it interesting?
-(c) is the **code** (script + notebook) readable with clear logic and **FREE OF REDUNDANCY** (no duplicated
-logic/cells, no dead code — the user cares most about this)? Apply consensus fixes; **reject bad ones with
-a reason**; re-render the map (screenshot) to verify fixes landed.
+**Roast the MAP itself** (screenshot it headless, hand them the PNG): (a) does the **map** tell the story
+on its own — boards distinct from data, axis/size encoding legible, the answer obvious, no label
+collisions or truncation? (b) does the **result figure** prove the method's value? (c) is the **code**
+readable and **FREE OF REDUNDANCY** (the user cares most)? Apply consensus fixes; **reject bad ones with a
+reason**; re-render and re-roast until it passes.
+**Verify the judge actually SAW the image** — if a verdict describes features that are absent (or omits
+ones clearly present), it didn't load the screenshot; discount it (make the prompt require quoting one
+on-image detail). Don't chase a hallucinated review.
 
 ## 4 · Approve
 Flip the tracker marker to `done` and write a concise `critique-summary.md` (scores, applied, rejected+why)
