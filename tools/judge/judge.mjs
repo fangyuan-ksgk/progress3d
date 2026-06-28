@@ -36,8 +36,21 @@ function glmKey() {
 }
 
 const JUDGE_DEFS = {
-  // verified: kimi -p reads images via ReadMediaFile; -p can't combine with -y/--auto.
-  kimi: (prompt) => ({ cmd: "kimi", args: ["-p", prompt] }),
+  // kimi: local kimi-code CLI if present; else headless via Moonshot's Anthropic-compatible
+  // endpoint through the claude harness (RunPod has no kimi CLI / OAuth) — set MOONSHOT_API_KEY.
+  kimi: (prompt) => {
+    const hasKimi = spawnSync("sh", ["-c", "command -v kimi"], { encoding: "utf8" }).stdout.trim();
+    if (hasKimi && !process.env.MOONSHOT_API_KEY) return { cmd: "kimi", args: ["-p", prompt] };
+    return {
+      cmd: "claude", args: ["-p", prompt, "--permission-mode", "bypassPermissions"],
+      env: {
+        ANTHROPIC_BASE_URL: "https://api.moonshot.ai/anthropic",
+        ANTHROPIC_AUTH_TOKEN: process.env.MOONSHOT_API_KEY || "",
+        ANTHROPIC_API_KEY: null,
+        API_TIMEOUT_MS: "300000",
+      },
+    };
+  },
   // verified: GLM via z.ai through the claude harness. Drop ANTHROPIC_API_KEY so AUTH_TOKEN +
   // the z.ai base URL take effect (otherwise the user's own key routes to Anthropic). Default
   // server-side model mapping is multimodal enough to read images.
