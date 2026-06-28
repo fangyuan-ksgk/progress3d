@@ -6,13 +6,19 @@ export type NodeType =
   // transformer/algorithm sub-modules (rendered as exploded cell clusters)
   | "io" | "embed" | "norm" | "attn" | "qkv" | "val" | "ffn" | "res" | "head"
   // general research-map nodes (rendered as a single clean glowing sphere)
-  | "hub" | "primary" | "doc" | "entity" | "accent" | "muted";
+  | "hub" | "primary" | "doc" | "entity" | "accent" | "muted"
+  // a flat dashboard CARD (report section: summary / figure / method / sources)
+  | "board"
+  // a label-only node (no geometry) — axis guides, captions
+  | "text";
 
 export interface GraphNode {
   id: string;
   label: string;
   type: NodeType;
   pos: [number, number, number];
+  weight?: number;  // research sphere size (e.g. a magnitude like % gain); default 1
+  sub?: string;     // board subtitle / one-line caption
 }
 
 export interface GraphEdge {
@@ -44,6 +50,8 @@ export const TYPE_COLOR: Record<NodeType, string> = {
   entity: "#39d2a0",   // a domain entity
   accent: "#5b8cff",   // a highlighted entity (the answer / winner)
   muted: "#8a93a8",    // secondary / inactive
+  board: "#9fb8ff",    // a dashboard card (report section)
+  text: "#7f8bbf",     // a label-only node (axis guide / caption)
 };
 
 // Default scene: one transformer block, exploded into its sub-modules.

@@ -231,13 +231,43 @@ export class ResearchMapView extends ItemView {
       m.position.set(x, y, z); m.scale.setScalar(sc); m.userData.nodeId = n.id;
       g.add(m); this.pickMeshes.push(m);
     };
-    // research-map nodes: one clean glowing icosahedron (not an exploded cell cluster)
+    if (n.type === "text") return g;  // label-only node (axis guide / caption) — no geometry
+    // research-map nodes: one clean glowing icosahedron; size optionally scaled by `weight`
+    // (a magnitude, e.g. % gain) so the quantitative story reads off node size.
     const RESEARCH = new Set(["hub", "primary", "doc", "entity", "accent", "muted"]);
     if (RESEARCH.has(n.type)) {
-      const r = n.type === "hub" ? 0.95 : n.type === "primary" ? 0.7 : 0.55;
+      const base = n.type === "hub" ? 0.95 : n.type === "primary" ? 0.7 : 0.55;
+      const r = n.weight != null ? Math.max(0.4, Math.min(1.8, 0.36 + n.weight * 0.065)) : base;
       const m = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 3),
         new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 1.4, roughness: 0.3 }));
       m.userData.nodeId = n.id; g.add(m); this.pickMeshes.push(m);
+      return g;
+    }
+    // dashboard CARD: a flat panel for a report section (summary/figure/method/sources) — visually a
+    // board, not a data sphere. Canvas sprite: dark rounded card, accent spine, title (+ optional sub).
+    if (n.type === "board") {
+      const c = document.createElement("canvas"); c.width = 560; c.height = 340;
+      const x = c.getContext("2d")! as any;
+      const card = (bx: number, by: number, bw: number, bh: number, rad: number) => { x.beginPath(); if (x.roundRect) x.roundRect(bx, by, bw, bh, rad); else x.rect(bx, by, bw, bh); };
+      card(6, 6, c.width - 12, c.height - 12, 24); x.fillStyle = "rgba(12,16,30,0.94)"; x.fill();
+      x.lineWidth = 4; x.strokeStyle = col; x.stroke();
+      x.fillStyle = col; card(22, 26, 12, c.height - 52, 6); x.fill();   // accent spine
+      const wrap = (text: string, font: string, fill: string, startY: number, lh: number, maxLines: number) => {
+        x.font = font; x.fillStyle = fill; const words = text.split(" ");
+        let line = "", yy = startY, n2 = 0; const maxw = c.width - 100;
+        for (const w of words) {
+          const t = line ? line + " " + w : w;
+          if (x.measureText(t).width > maxw && line) { x.fillText(line, 56, yy); yy += lh; line = w; if (++n2 >= maxLines - 1) break; } else line = t;
+        }
+        x.fillText(line, 56, yy); return yy + lh;
+      };
+      x.textBaseline = "top";
+      const afterTitle = wrap(n.label, "700 48px Inter, sans-serif", "#f3f6ff", 44, 54, 2);
+      if (n.sub) wrap(n.sub, "400 31px Inter, sans-serif", "#b6c1ea", afterTitle + 14, 38, 2);
+      const tex = new THREE.CanvasTexture(c);
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+      const W = 5.8; sp.scale.set(W, (W * c.height) / c.width, 1); sp.userData.nodeId = n.id;
+      g.add(sp); this.pickMeshes.push(sp as any);
       return g;
     }
     if (n.type === "attn") {
@@ -291,10 +321,12 @@ export class ResearchMapView extends ItemView {
       this.root.add(g);
       this.meshById.set(n.id, g);
       this.nodeMeshes.push(g);
-      const yOff = (rank.get(n.id)! % 2 === 0) ? 2.2 : 3.0;
-      const sprite = this.label(n.label, n.pos[0], n.pos[1] + yOff, n.pos[2], "#eef4ff", 30);
-      (g as any).p3d.label = sprite;
-      (g as any).p3d.yOff = yOff;
+      if (n.type !== "board") {   // board cards already show their title; don't double-label
+        const yOff = (rank.get(n.id)! % 2 === 0) ? 2.2 : 3.0;
+        const sprite = this.label(n.label, n.pos[0], n.pos[1] + yOff, n.pos[2], "#eef4ff", 30);
+        (g as any).p3d.label = sprite;
+        (g as any).p3d.yOff = yOff;
+      }
     }
 
     for (const e of graph.edges) {
