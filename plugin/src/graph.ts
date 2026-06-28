@@ -3,7 +3,10 @@
 // Every node has a stable `id` → its note is `progress3d/<id>.md`.
 
 export type NodeType =
-  | "io" | "embed" | "norm" | "attn" | "qkv" | "val" | "ffn" | "res" | "head";
+  // transformer/algorithm sub-modules (rendered as exploded cell clusters)
+  | "io" | "embed" | "norm" | "attn" | "qkv" | "val" | "ffn" | "res" | "head"
+  // general research-map nodes (rendered as a single clean glowing sphere)
+  | "hub" | "primary" | "doc" | "entity" | "accent" | "muted";
 
 export interface GraphNode {
   id: string;
@@ -34,6 +37,13 @@ export const TYPE_COLOR: Record<NodeType, string> = {
   ffn: "#ff9a5c",
   res: "#5fe0c0",
   head: "#e06f9c",
+  // research-map node colors
+  hub: "#ffd27a",      // the central subject
+  primary: "#ff9a5c",  // the headline / summary
+  doc: "#9fb8ff",      // a report section (figure / method / sources)
+  entity: "#39d2a0",   // a domain entity
+  accent: "#5b8cff",   // a highlighted entity (the answer / winner)
+  muted: "#8a93a8",    // secondary / inactive
 };
 
 // Default scene: one transformer block, exploded into its sub-modules.

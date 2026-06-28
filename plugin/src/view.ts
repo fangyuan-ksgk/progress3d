@@ -231,6 +231,15 @@ export class ResearchMapView extends ItemView {
       m.position.set(x, y, z); m.scale.setScalar(sc); m.userData.nodeId = n.id;
       g.add(m); this.pickMeshes.push(m);
     };
+    // research-map nodes: one clean glowing icosahedron (not an exploded cell cluster)
+    const RESEARCH = new Set(["hub", "primary", "doc", "entity", "accent", "muted"]);
+    if (RESEARCH.has(n.type)) {
+      const r = n.type === "hub" ? 0.95 : n.type === "primary" ? 0.7 : 0.55;
+      const m = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 3),
+        new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 1.4, roughness: 0.3 }));
+      m.userData.nodeId = n.id; g.add(m); this.pickMeshes.push(m);
+      return g;
+    }
     if (n.type === "attn") {
       const cg = new THREE.BoxGeometry(0.28, 0.28, 0.05);
       const grids: THREE.Mesh[][][] = [];
