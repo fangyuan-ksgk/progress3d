@@ -22,6 +22,24 @@ export default class Progress3DPlugin extends Plugin {
     this.registerView(CHAT_VIEW_TYPE, (leaf) => new ClaudeChatView(leaf, this));
     this.addSettingTab(new Progress3DSettingTab(this.app, this));
 
+    // Live 3D embed: ```p3d  <vault-path-to-diagram.html>  [height: 520px] ``` renders that
+    // self-contained Three.js HTML ANIMATED, inline in the note, via an iframe (Obsidian
+    // sanitizes raw inline HTML, but a plugin-created iframe with srcdoc runs its scripts).
+    this.registerMarkdownCodeBlockProcessor("p3d", async (source, el) => {
+      const lines = source.trim().split("\n").map((l) => l.trim()).filter(Boolean);
+      const rel = normalizePath(lines[0] || "");
+      const hLine = lines.find((l) => /^height\s*:/i.test(l));
+      const height = hLine ? hLine.split(":")[1].trim() : "520px";
+      const ad: any = this.app.vault.adapter;
+      if (!(await ad.exists(rel))) { el.createEl("div", { text: `progress3d: 3D file not found — "${rel}"` }); return; }
+      // Load via the app:// resource URL (NOT srcdoc): a real src navigation gives the iframe its own
+      // document context, so the diagram's CDN three.js import runs instead of inheriting Obsidian's CSP.
+      const iframe = el.createEl("iframe");
+      iframe.src = ad.getResourcePath(rel);
+      iframe.style.width = "100%"; iframe.style.height = height;
+      iframe.style.border = "0"; iframe.style.borderRadius = "10px"; iframe.style.background = "#04050b";
+    });
+
     this.addRibbonIcon("box", "Open 3D Research Map", () => this.activateView());
     this.addRibbonIcon("message-square", "Open Claude Code chat", () => this.activateChat());
     this.addCommand({ id: "open-claude-chat", name: "Open Claude Code chat", callback: () => this.activateChat() });

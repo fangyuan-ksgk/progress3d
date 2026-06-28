@@ -21,6 +21,7 @@ class Plugin {
   addRibbonIcon(i, t, cb) { this._ribbons.push({ i, t, cb }); return {}; }
   addCommand(c) { this._commands.push(c); return c; }
   addSettingTab(t) { this._tabs.push(t); }
+  registerMarkdownCodeBlockProcessor(lang, fn) { this._codeblocks = this._codeblocks || {}; this._codeblocks[lang] = fn; }
   registerEvent() {}
   async loadData() { return null; }
   async saveData() {}
