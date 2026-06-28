@@ -40,8 +40,12 @@ high→low). Capture logs go to stderr.
 - **glm** — runs THROUGH the `claude` harness pointed at z.ai's Anthropic-compatible endpoint
   (`ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic`, `ANTHROPIC_AUTH_TOKEN=$GLM_API_KEY`,
   `ANTHROPIC_API_KEY` deleted so the user's own key doesn't hijack it). Key is read from env or
-  pulled from the login shell (`~/.zshrc`). GLM sees images but confabulates more than Kimi —
-  weight its specifics lower; it's valuable for divergent ideas, not pixel-accurate readings.
+  pulled from the login shell (`~/.zshrc`). GLM's image reading is UNRELIABLE through this route:
+  sometimes grounded, sometimes it answers WITHOUT loading the image (observed 2026-06-28: it
+  "reviewed" axes/legend that were plainly present as if absent). And even when it sees, it
+  confabulates more than Kimi. So: **verify GLM actually saw the image** — require it to quote one
+  on-image detail; if a verdict describes absent features or misses obvious ones, discount it and lean
+  on Kimi for the pixel-accurate visual verdict. GLM is best for a divergent second opinion.
 - **codex / gemini / claude** — stubbed in the registry; flip on when the CLI is installed/logged in.
 
 ## The loop (how to use the output)
