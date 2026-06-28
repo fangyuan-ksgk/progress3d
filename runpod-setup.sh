@@ -108,4 +108,9 @@ export PATH="\$HOME/.local/bin:\$PATH"
 ENV
 grep -q 'progress3d-judge.env' "$HOME/.bashrc" 2>/dev/null || echo 'source ~/.progress3d-judge.env' >> "$HOME/.bashrc"
 
+# 8 · silence the claude.ai connector auth nags (Gmail/Drive/etc.) — a headless agent box uses
+# none of them; only the local progress3d MCP matters. Merges into ~/.claude/settings.json.
+log "disabling claude.ai connectors (no auth nags)"
+node -e 'const fs=require("fs"),os=require("os"),p=require("path");const f=p.join(os.homedir(),".claude","settings.json");fs.mkdirSync(p.dirname(f),{recursive:true});let s={};try{s=JSON.parse(fs.readFileSync(f,"utf8"))}catch{}s.disableClaudeAiConnectors=true;fs.writeFileSync(f,JSON.stringify(s,null,2))'
+
 log "setup complete — run:  bash $PROG/runpod-verify.sh"
